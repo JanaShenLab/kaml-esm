@@ -12,7 +12,7 @@ The KaML-ESM Inference Pipeline performs the following tasks:
 - **Structure Processing:**  
   Optionally folds and optimizes protein structures.
 - **Model Selection:**  
-  Use the optional arguments `--acidic` and `--basic` to select the model for each channel. By default, acidic uses esm2 and basic uses esmC. If both channels use the same model, embeddings are extracted only once.
+  Use the optional arguments `--acidic` and `--basic` to select the model for each channel. By default, acidic uses esm2 and basic uses esmC.
 
 ## Environment Setup
 
