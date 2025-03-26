@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-"""
-KaML-ESM Inference Pipeline (Debug Version) -- Thread-based version
-FIXED: "too many open files" by using ThreadPoolExecutor.
-Also fixed residue numbering misalignment by using sequential indices.
-"""
+#
+#  ____            ____  __    __                   __       __  __       
+# |    \          |    \|  \  /  \                 |  \     /  \|  \      
+# | $$$$  ______   \$$$$| $$ /  $$ ______          | $$\   /  $$| $$      
+# | $$   /      \   | $$| $$/  $$ |      \  ______ | $$$\ /  $$$| $$      
+# | $$  |  $$$$$$\  | $$| $$  $$   \$$$$$$\|      \| $$$$\  $$$$| $$      
+# | $$  | $$  | $$  | $$| $$$$$\  /      $$ \$$$$$$| $$\$$ $$ $$| $$      
+# | $$_ | $$__/ $$ _| $$| $$ \$$\|  $$$$$$$        | $$ \$$$| $$| $$_____ 
+# | $$ \| $$    $$|   $$| $$  \$$\\$$    $$        | $$  \$ | $$| $$     \
+#  \$$$$| $$$$$$$  \$$$$ \$$   \$$ \$$$$$$$         \$$      \$$ \$$$$$$$$
+# 			| $$                                                              
+# 			| $$                                                              
+# 			 \$$                                                           
+#												Written by: Mingzhe Shen & Guy W Dayhoff II
+#																		School of Pharmacy
+#																		University of Maryland Baltimore
+#
+##########################################################################
+
 import argparse
 import os
 import sys
@@ -75,8 +89,8 @@ THREE_TO_ONE = {
     "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y"
 }
 
-ACIDIC_MODEL_DIR = "AcidicESM2"
-BASIC_MODEL_DIR = "BasicESMC"
+ACIDIC_MODEL_DIR = "wts/esm2/acidic"
+BASIC_MODEL_DIR = "wts/esmC/basic"
 
 PRELOADED_ACIDIC_WEIGHTS = {}
 PRELOADED_BASIC_WEIGHTS = {}
@@ -795,6 +809,23 @@ def forge_fold_structure(sequence, header, out_dir, max_retries=5,
     logging.error("Failed to generate structure via forge.")
     sys.exit(1)
 
+def splash():
+    print("------------------------------------------------------------------------")
+    print("""
+ ____            ____  __    __                   __       __  __
+|    \\          |    \\|  \\  /  \\                 |  \\     /  \\|  \\
+| $$$$  ______   \$$$$| $$ /  $$ ______          | $$\   /  $$| $$
+| $$   /      \\   | $$| $$/  $$ |      \  ______ | $$$\ /  $$$| $$
+| $$  |  $$$$$$\\  | $$| $$  $$   \$$$$$$\|      \| $$$$\  $$$$| $$
+| $$  | $$  | $$  | $$| $$$$$\\  /      $$ \$$$$$$| $$\$$ $$ $$| $$
+| $$_ | $$__/ $$ _| $$| $$ \$$\\|  $$$$$$$        | $$ \$$$| $$| $$_____
+| $$ \\| $$    $$|   $$| $$  \$$\\\\$$    $$        | $$  \$ | $$| $$     \\
+ \\$$$$| $$$$$$$  \\$$$$ \$$   \$$ \\$$$$$$$         \\$$      \\$$ \\$$$$$$$$
+      | $$
+      | $$                  Mingzhe Shen & Guy 'Wayyne' Dayhoff II
+       \\$$                     March 2025, School of Pharmacy        """)
+    print("                              University of Maryland Baltimore")
+    print("------------------------------------------------------------------------")
 
 def parse_args():
     """
@@ -833,6 +864,7 @@ def main():
     Main function to run the KaML-ESM pipeline.
     """
     args = parse_args()
+    splash()
     os.makedirs(args.outdir, exist_ok=True)
     log_file = os.path.join(args.outdir, "pipeline.log")
     setup_logging(log_file, debug=args.debug)
