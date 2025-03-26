@@ -718,7 +718,7 @@ def parse_args():
                         help="Skip structure output step")
     parser.add_argument("--outdir", type=str, default="output",
                         help="Output directory")
-    parser.add_argument("--nproc", type=int, default=4,
+    parser.add_argument("--nproc", type=int, default=1,
                         help="Number of threads for parallel inference")
     parser.add_argument("--debug", action="store_true",
                         help="Enable debug mode for verbose logging")
