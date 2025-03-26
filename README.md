@@ -79,7 +79,7 @@ The pipeline outputs:
 Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm3/C.
 
 - **wts**  
- saved model weights for esm2 and esmC acidic and basic channels
+ saved model weights for ESM2 and ESMC acidic and basic channels
 
 - **README.md**  
   This documentation file.
