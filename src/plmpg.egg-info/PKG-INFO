@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: plmpg
+Version: 0.1.0
+Summary: Unified ESM2 + ESM3 inference and processing tools
+Author: Guy 'Wayyne' Dayhoff
+Author-email: gdayhoff@rx.umaryland.edu
+Requires-Python: >=3.10
+Dynamic: author
+Dynamic: author-email
+Dynamic: requires-python
+Dynamic: summary

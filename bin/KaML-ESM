@@ -1,0 +1,943 @@
+#!/usr/bin/env python3
+"""
+KaML-ESM Inference Pipeline (Debug Version) -- Thread-based version
+FIXED: "too many open files" by using ThreadPoolExecutor.
+Also fixed residue numbering misalignment by using sequential indices.
+"""
+import argparse
+import os
+import sys
+import re
+import subprocess
+import urllib.request
+import tempfile
+import logging
+import statistics
+import time
+import gc
+import traceback  # For full traceback logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+import torch
+import numpy as np
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="Entity ID not found in metadata, using None as default",
+    module="esm.utils.structure.protein_complex"
+)
+
+warnings.simplefilter("ignore", FutureWarning)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# -------- Global Extraction Parameters --------
+ESM2_MODEL = "esm2_t33_650M_UR50D"
+ESM2_TOKS_PER_BATCH = 4096
+ESM2_TRUNTO = 1022
+ESM2_INCLUDE = ["per_tok"]
+ESM2_REPR = [31]
+ESM2_ATTN_ROI = ["LC3D", "ABPP"]
+ESM2_NOGPU = True
+
+ESMC_MODEL = "esmc-6b-2024-12"
+ESMC_TRUNTO = 2046
+ESMC_INCLUDE = ["per_tok"]
+ESMC_REPR = [80]
+ESMC_ATTN_ROI = ["LC3D", "ABPP"]
+
+# ---- Global Folding Parameters for Forge Client --------
+FORGE_URL = "https://forge.evolutionaryscale.ai"
+FORGE_MDL = "esm3-large-2024-03"
+
+# -------- Global Inference Parameters --------
+norm_dict = {
+    0: [2.3, 0.24], 1: [2.29, 0.22], 2: [2.29, 0.23],
+    3: [2.31, 0.24], 4: [2.31, 0.24], 5: [2.32, 0.24],
+    6: [2.29, 0.26], 7: [2.29, 0.28], 8: [2.32, 0.23],
+    9: [2.33, 0.24], 10: [2.28, 0.21], 11: [2.33, 0.25],
+    12: [2.32, 0.22], 13: [2.31, 0.22], 14: [2.29, 0.29],
+    15: [2.28, 0.2], 16: [2.3, 0.27], 17: [2.31, 0.22],
+    18: [2.3, 0.22], 19: [2.28, 0.19]
+}
+model_pka_dict = {
+    "D": 3.7, "E": 4.2, "H": 6.5, "C": 8.5, "K": 10.4, "Y": 10.1
+}
+residue_groups = {
+    "acidic": ["D", "E", "C", "Y"],
+    "basic": ["H", "K"]
+}
+
+THREE_TO_ONE = {
+    "ALA": "A", "CYS": "C", "ASP": "D", "GLU": "E", "PHE": "F",
+    "GLY": "G", "HIS": "H", "ILE": "I", "LYS": "K", "LEU": "L",
+    "MET": "M", "ASN": "N", "PRO": "P", "GLN": "Q", "ARG": "R",
+    "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y"
+}
+
+ACIDIC_MODEL_DIR = "AcidicESM2"
+BASIC_MODEL_DIR = "BasicESMC"
+
+PRELOADED_ACIDIC_WEIGHTS = {}
+PRELOADED_BASIC_WEIGHTS = {}
+
+# ---------------------- Models ---------------------- #
+class BasicMLP(torch.nn.Module):
+    """
+    BasicMLP for the ESMC/basic channel.
+    Architecture: 2560 -> 1024 -> 512 -> 64 -> 1 with dropout=0.2.
+    """
+    def __init__(self):
+        super(BasicMLP, self).__init__()
+        self.fc1 = torch.nn.Linear(2560, 1024)
+        self.bn1 = torch.nn.BatchNorm1d(1024)
+        self.fc2 = torch.nn.Linear(1024, 512)
+        self.bn2 = torch.nn.BatchNorm1d(512)
+        self.fc3 = torch.nn.Linear(512, 64)
+        self.bn3 = torch.nn.BatchNorm1d(64)
+        self.fc4 = torch.nn.Linear(64, 1)
+
+    def forward(self, x, batch=None):
+        act = torch.nn.functional.relu
+        drop = torch.nn.Dropout(p=0.2)
+        h = act(self.bn1(self.fc1(x)))
+        h = drop(h)
+        h = act(self.bn2(self.fc2(h)))
+        h = drop(h)
+        h = act(self.bn3(self.fc3(h)))
+        h = drop(h)
+        return self.fc4(h)
+
+
+class AcidicMLP(torch.nn.Module):
+    """
+    AcidicMLP for the ESM2/acidic channel.
+    Architecture: 1280 -> 512 -> 256 -> 32 -> 1 with dropout=0.2.
+    """
+    def __init__(self):
+        super(AcidicMLP, self).__init__()
+        self.fc1 = torch.nn.Linear(1280, 512)
+        self.fc2 = torch.nn.Linear(512, 256)
+        self.bn2 = torch.nn.BatchNorm1d(256)
+        self.fc3 = torch.nn.Linear(256, 32)
+        self.bn3 = torch.nn.BatchNorm1d(32)
+        self.fc4 = torch.nn.Linear(32, 1)
+
+    def forward(self, x, batch=None):
+        act = torch.nn.functional.relu
+        drop = torch.nn.Dropout(p=0.2)
+        h = self.fc1(x)
+        h = drop(h)
+        h = act(self.bn2(self.fc2(h)))
+        h = drop(h)
+        h = act(self.bn3(self.fc3(h)))
+        h = drop(h)
+        return self.fc4(h)
+
+# ------------------- Helper Functions ------------------- #
+def setup_logging(log_file, debug=False):
+    """
+    Set up logging to file and stdout.
+    """
+    level = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(filename=log_file, filemode="w", level=level,
+                        format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    logging.debug("Debug logging is enabled.")
+
+
+def fetch_uniprot_sequence(uniprot_id):
+    """
+    Fetch protein sequence from UniProt.
+    
+    Args:
+        uniprot_id (str): UniProt ID.
+    
+    Returns:
+        str: Protein sequence.
+    """
+    url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
+    try:
+        with urllib.request.urlopen(url) as response:
+            fasta_data = response.read().decode("utf-8")
+        lines = fasta_data.splitlines()
+        seq = "".join(line.strip() for line in lines 
+                      if not line.startswith(">"))
+        logging.debug("Fetched UniProt seq %s: %s... (length %d)",
+                      uniprot_id, seq[:30], len(seq))
+        return seq
+    except Exception as e:
+        logging.error("Error fetching UniProt %s: %s", uniprot_id, e)
+        sys.exit(1)
+
+
+def fetch_pdb(pdb_id, out_path):
+    """
+    Fetch PDB file from RCSB and save locally.
+    
+    Args:
+        pdb_id (str): PDB ID.
+        out_path (str): Local path to save the PDB.
+    
+    Returns:
+        str: Path to saved PDB file.
+    """
+    url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+    try:
+        with urllib.request.urlopen(url) as response:
+            pdb_data = response.read().decode("utf-8")
+        with open(out_path, "w") as f:
+            f.write(pdb_data)
+        logging.debug("Fetched PDB %s -> %s", pdb_id, out_path)
+        return out_path
+    except Exception as e:
+        logging.error("Error fetching PDB %s: %s", pdb_id, e)
+        sys.exit(1)
+
+
+def parse_pdb_to_sequence(pdb_file):
+    """
+    Parse a PDB file to extract sequence and residue info.
+    Now returns a sequential index for each residue.
+    
+    Args:
+        pdb_file (str): Path to PDB file.
+    
+    Returns:
+        tuple: (sequence, residue_info) where residue_info is a list of
+               tuples (res_name, original_res_seq, chain_id, sequential_index).
+    """
+    seq = ""
+    residue_info = []
+    processed = set()
+    seq_index = 1  # sequential counter starting at 1
+    with open(pdb_file, "r") as f:
+        for line in f:
+            if line.startswith("ATOM") and line[12:16].strip() == "CA":
+                res_name = line[17:20].strip()
+                chain_id = line[21].strip()
+                res_seq = line[22:26].strip()
+                uid = f"{chain_id}_{res_seq}"
+                if uid in processed:
+                    continue
+                processed.add(uid)
+                aa = THREE_TO_ONE.get(res_name.upper(), "X")
+                seq += aa
+                # Append original residue number along with the sequential index
+                residue_info.append((res_name.upper(), res_seq, chain_id, seq_index))
+                seq_index += 1
+    logging.debug("Parsed PDB %s: seq len %d with %d residues",
+                  pdb_file, len(seq), len(residue_info))
+    return seq, residue_info
+
+
+def retry_operation(func, max_retries=3, initial_delay=2, backoff_factor=2,
+                    jitter=0.5):
+    """
+    Retry an operation with exponential backoff.
+    
+    Args:
+        func (callable): Function to execute.
+        max_retries (int): Maximum number of retries.
+        initial_delay (int): Initial delay in seconds.
+        backoff_factor (int): Factor by which delay increases.
+        jitter (float): Random jitter.
+    
+    Returns:
+        Result of func() if successful.
+    """
+    import random
+    delay = initial_delay
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = func()
+            logging.debug("Attempt %d: Success.", attempt)
+            return result
+        except Exception as e:
+            if attempt < max_retries:
+                stime = delay + random.uniform(0, jitter)
+                logging.debug("Attempt %d/%d fail: %s. Retry in %.2fs...",
+                              attempt, max_retries, e, stime)
+                time.sleep(stime)
+                delay *= backoff_factor
+            else:
+                logging.debug("Attempt %d/%d fail: %s. No more retries.",
+                              attempt, max_retries, e)
+                raise
+
+
+def get_titratable_indices(residue_info, channel):
+    """
+    Get indices of titratable residues based on channel.
+    
+    Args:
+        residue_info (list): List of residue tuples.
+        channel (str): "acidic" or "basic".
+    
+    Returns:
+        list: List of indices.
+    """
+    indices = []
+    for i, (res_name, res_seq, chain_id, seq_index) in enumerate(residue_info):
+        one_letter = THREE_TO_ONE.get(res_name.upper(), "X")
+        if channel == "acidic" and one_letter in residue_groups["acidic"]:
+            indices.append(i)
+        elif channel == "basic" and one_letter in residue_groups["basic"]:
+            indices.append(i)
+    logging.debug("Titratable indices for %s: %s", channel, indices)
+    return indices
+
+
+def parse_residues(header, attn_roi):
+    """
+    Parse attention region of interest (ROI) residues from header.
+    
+    Args:
+        header (str): Header string.
+        attn_roi (list): List of ROI fields.
+    
+    Returns:
+        list: Sorted list of residue numbers.
+    """
+    import re
+    roi_patterns = {field: re.compile(rf"{field}=([\d,]+)")
+                    for field in attn_roi}
+    residues = set()
+    for field, pattern in roi_patterns.items():
+        match = pattern.search(header)
+        if match:
+            for num_str in match.group(1).split(","):
+                try:
+                    residues.add(int(num_str))
+                except ValueError:
+                    pass
+    parsed = sorted(residues)
+    logging.debug("Parsed ROI residues from header '%s': %s",
+                  header, parsed)
+    return parsed
+
+
+def extract_esm2_representation(sequence, header):
+    """
+    Extract representation using ESM2.
+    
+    Args:
+        sequence (str): Protein sequence.
+        header (str): Header string.
+    
+    Returns:
+        dict: Dictionary with extracted representations.
+    """
+    from plmpg.esm2 import pretrained
+    from plmpg.esm2.esm.data import FastaBatchedDataset
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False,
+                                     suffix=".fasta") as tf:
+        fasta_header = header if header.startswith(">") else f">{header}"
+        tf.write(f"{fasta_header}\n{sequence}\n")
+        fasta_path = tf.name
+    logging.debug("Temporary FASTA for ESM2: %s", fasta_path)
+
+    model, alphabet = pretrained.load_model_and_alphabet(ESM2_MODEL)
+    model.eval()
+    if torch.cuda.is_available() and not ESM2_NOGPU:
+        model = model.cuda()
+        logging.debug("ESM2 -> GPU")
+
+    dataset = FastaBatchedDataset.from_file(fasta_path)
+    batches = dataset.get_batch_indices(ESM2_TOKS_PER_BATCH,
+                                        extra_toks_per_seq=1)
+    data_loader = torch.utils.data.DataLoader(
+        dataset,
+        collate_fn=alphabet.get_batch_converter(ESM2_TRUNTO),
+        batch_sampler=batches,
+    )
+
+    result = {}
+    for b_idx, (labels, strs, toks) in enumerate(data_loader):
+        trunc_len = min(ESM2_TRUNTO, len(strs[0]))
+        with torch.no_grad():
+            out = model(toks,
+                        repr_layers=[(i + model.num_layers + 1) %
+                                     (model.num_layers + 1)
+                                     for i in ESM2_REPR],
+                        return_contacts=False)
+        reps = {layer: t[0, 1:trunc_len+1].clone().cpu()
+                for layer, t in out["representations"].items()}
+        result = {"hdr": labels[0], "seq": strs[0],
+                  "roi": parse_residues(labels[0], ESM2_ATTN_ROI)}
+        if "per_tok" in ESM2_INCLUDE:
+            result["representations"] = reps
+        logging.debug("Extracted ESM2 for batch %d", b_idx)
+        break
+
+    os.remove(fasta_path)
+    logging.debug("Removed temp FASTA %s", fasta_path)
+    return result
+
+
+def extract_esmc_representation(sequence, header):
+    """
+    Extract representation using ESMC via Forge client.
+    
+    Args:
+        sequence (str): Protein sequence.
+        header (str): Header string.
+    
+    Returns:
+        dict: Dictionary with extracted representations.
+    """
+    from esm.sdk.forge import ESM3ForgeInferenceClient
+    from esm.sdk.api import ESMProtein, LogitsConfig
+    import time
+
+    hdr = header if header.startswith(">") else f">{header}"
+    protein = ESMProtein(sequence=sequence,
+                         potential_sequence_of_concern=False)
+    token = os.getenv("PLMPG_FORGE_TOKEN")
+    if token is None:
+        logging.error("PLMPG_FORGE_TOKEN not set.")
+        sys.exit(1)
+    logging.debug("Using PLMPG_FORGE_TOKEN: %s...", token[:5])
+
+    forge_client = ESM3ForgeInferenceClient(model=ESMC_MODEL,
+                                            url="https://forge.evolutionaryscale.ai",
+                                            token=token)
+    cfg = {"truncate_len": ESMC_TRUNTO, "max_retries": 5,
+           "initial_delay": 2, "backoff_factor": 2, "jitter": 0.5}
+    try:
+        def encode_func():
+            return forge_client.encode(protein)
+        protein_tensor = retry_operation(encode_func,
+                                         max_retries=cfg["max_retries"])
+    except Exception as e:
+        logging.error("Failed to encode ESMC: %s", e)
+        sys.exit(1)
+
+    result = {"hdr": hdr, "seq": sequence,
+              "roi": parse_residues(hdr, ESMC_ATTN_ROI)}
+    trunc_length = min(cfg["truncate_len"], len(sequence))
+    reps = {}
+
+    for layer_i in ESMC_REPR:
+        def extract_layer():
+            embed_cfg = LogitsConfig(return_hidden_states=True,
+                                     ith_hidden_layer=layer_i)
+            out = forge_client.logits(protein_tensor, embed_cfg)
+            if out.hidden_states is None:
+                raise ValueError("Empty hidden states.")
+            return out.hidden_states.squeeze()
+
+        try:
+            full_h = retry_operation(extract_layer,
+                                     max_retries=cfg["max_retries"])
+            if "per_tok" in ESMC_INCLUDE:
+                reps[layer_i] = full_h[1:trunc_length+1].clone().cpu()
+            logging.debug("Extracted ESMC layer %d", layer_i)
+        except Exception as e:
+            logging.error("ESMC layer %d fail: %s", layer_i, e)
+        finally:
+            gc.collect()
+            time.sleep(1)
+
+    if "per_tok" in ESMC_INCLUDE:
+        result["representations"] = reps
+    return result
+
+
+def preload_weights(model_dir, channel):
+    """
+    Preload weights for the given model directory and channel.
+    
+    Args:
+        model_dir (str): Directory containing weight files.
+        channel (str): "acidic" or "basic".
+    
+    Returns:
+        dict: Preloaded weights dictionary.
+    """
+    weights = {}
+    num_splits = 20
+    replicas = 10
+    import torch
+
+    for split in range(num_splits):
+        for rep in range(replicas):
+            fname = f"E{split}f{rep}.pth"
+            fpath = os.path.join(model_dir, fname)
+            if os.path.isfile(fpath):
+                logging.debug("Loading weights: %s", fpath)
+                state = torch.load(fpath, map_location="cpu")
+                if isinstance(state, tuple):
+                    logging.debug("Weight file %s is tuple. Using [0].", 
+                                  fpath)
+                    state = state[0]
+                logging.debug("Loaded %s keys: %s", fpath, list(state.keys()))
+                weights[(split, rep)] = state
+            else:
+                logging.error("Missing weight: %s", fpath)
+    return weights
+
+
+def inference_worker(ensemble_ids, embeddings, filt_res_info,
+                     channel, weight_dict):
+    """
+    A single thread that loads ensemble weights and runs forward pass.
+    
+    Args:
+        ensemble_ids (list): Ensemble keys.
+        embeddings (Tensor): Embedding tensor.
+        filt_res_info (list): Filtered residue info.
+        channel (str): "acidic" or "basic".
+        weight_dict (dict): Dictionary of weights.
+    
+    Returns:
+        dict: Predictions mapping residue uid to pKa.
+    """
+    import torch
+    import numpy as np
+    import logging
+    # Import models and dictionaries from current module
+    from __main__ import AcidicMLP, BasicMLP, norm_dict, model_pka_dict, THREE_TO_ONE
+
+    worker_preds = {}
+    try:
+        logging.debug("Worker started for channel=%s, ensemble_ids=%s",
+                      channel, ensemble_ids)
+        if channel == "acidic":
+            model = AcidicMLP()
+        else:
+            model = BasicMLP()
+
+        logging.debug("Embeddings shape in worker: %s", embeddings.shape)
+        logging.debug("filter_res_info length: %d", len(filt_res_info))
+
+        if torch.cuda.is_available():
+            model = model.cuda()
+        model.eval()
+
+        for key in ensemble_ids:
+            logging.debug("Loading ensemble key=%s for channel=%s",
+                          key, channel)
+            model.load_state_dict(weight_dict[key])
+            if torch.cuda.is_available():
+                emb = embeddings.cuda(non_blocking=True)
+            else:
+                emb = embeddings
+            with torch.no_grad():
+                outs = model(emb).squeeze(1).cpu().numpy()
+            # Use sequential index from filt_res_info for correct mapping.
+            for j, res in enumerate(filt_res_info):
+                res_name, res_seq, chain_id, seq_index = res
+                uid = f"{res_name}_{seq_index}_{chain_id}"
+                raw_pred = outs[j]
+                split = key[0]
+                std, mean = norm_dict[split]
+                pred_back = raw_pred * std + mean
+                aa = THREE_TO_ONE.get(res_name.upper(), "X")
+                base_pka = model_pka_dict.get(aa, 0.0)
+                if abs(raw_pred) < 1e-9:
+                    final = 0.0
+                else:
+                    final = pred_back + base_pka
+                worker_preds.setdefault(uid, []).append(final)
+        logging.debug("Worker done for channel=%s, ensemble_ids=%s",
+                      channel, ensemble_ids)
+        return worker_preds
+    except Exception as e:
+        logging.error("Inference worker error for channel=%s, ensemble_ids=%s: %s",
+                      channel, ensemble_ids, e)
+        logging.error(traceback.format_exc())
+        return {}
+
+
+def run_ensemble_inference(embeddings, filt_res_info,
+                           channel, nproc, weight_dict):
+    """
+    Run ensemble inference across multiple threads.
+    
+    Args:
+        embeddings (Tensor): Embedding tensor.
+        filt_res_info (list): Filtered residue info.
+        channel (str): "acidic" or "basic".
+        nproc (int): Number of threads.
+        weight_dict (dict): Weights dictionary.
+    
+    Returns:
+        dict: Averaged predictions per residue uid.
+    """
+    import numpy as np
+    import logging
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from __main__ import inference_worker
+
+    avail_ids = list(weight_dict.keys())
+    logging.debug("Avail ensemble %s: %s", channel, avail_ids)
+
+    if nproc < 1:
+        nproc = 1
+    chunk_size = int(np.ceil(len(avail_ids) / nproc))
+    chunks = [avail_ids[i:i + chunk_size] 
+              for i in range(0, len(avail_ids), chunk_size)]
+    logging.debug("Partitioned into %d chunks of %d", 
+                  len(chunks), chunk_size)
+
+    all_preds = {}
+    with ThreadPoolExecutor(max_workers=nproc) as executor:
+        futures = []
+        for chunk in chunks:
+            fut = executor.submit(inference_worker, chunk, embeddings,
+                                  filt_res_info, channel, weight_dict)
+            futures.append(fut)
+        for fut in as_completed(futures):
+            try:
+                w_preds = fut.result()
+                for uid, preds in w_preds.items():
+                    all_preds.setdefault(uid, []).extend(preds)
+            except Exception as e:
+                logging.error("Exception in worker thread:")
+                logging.error(e)
+
+    avg_preds = {}
+    for uid, vals in all_preds.items():
+        avg_preds[uid] = np.mean(vals) if vals else 0.0
+
+    logging.debug("Averaged predictions: %s", avg_preds)
+    return avg_preds
+
+
+def write_predictions_csv(predictions, out_csv):
+    """
+    Write predictions to CSV file.
+    
+    Args:
+        predictions (dict): Predictions dictionary.
+        out_csv (str): Path to output CSV.
+    """
+    import logging
+    with open(out_csv, "w") as f:
+        f.write("Residue_ID,Predicted_pKa\n")
+        for uid, pka in predictions.items():
+            f.write(f"{uid},{pka:.2f}\n")
+    logging.info("Wrote CSV to %s", out_csv)
+
+
+def update_pdb_beta_factors(pdb_file, predictions, out_pdb):
+    """
+    Update PDB file beta factors with predicted pKa values.
+    
+    Args:
+        pdb_file (str): Input PDB file.
+        predictions (dict): Predictions dictionary.
+        out_pdb (str): Output PDB file.
+    """
+    import logging
+    updated_lines = []
+    residue_counter = 0
+    with open(pdb_file, "r") as f:
+        lines = f.readlines()
+    for line in lines:
+        if line.startswith("ATOM"):
+            if line[12:16].strip() == "CA":
+                residue_counter += 1
+                res_name = line[17:20].strip()
+                chain_id = line[21].strip()
+                uid = f"{res_name}_{residue_counter}_{chain_id}"
+                beta_val = predictions.get(uid, 0.0)
+                new_beta = f"{beta_val:6.2f}"
+                new_line = line[:60] + new_beta + line[66:]
+                updated_lines.append(new_line)
+            else:
+                updated_lines.append(line)
+        else:
+            updated_lines.append(line)
+    with open(out_pdb, "w") as f:
+        f.writelines(updated_lines)
+    logging.info("Updated PDB -> %s", out_pdb)
+
+
+def shutil_which(executable):
+    """
+    Mimic shutil.which() for finding an executable in PATH.
+    
+    Args:
+        executable (str): Executable name.
+    
+    Returns:
+        str or None: Full path if found, else None.
+    """
+    for path in os.environ.get("PATH", "").split(os.pathsep):
+        full = os.path.join(path, executable)
+        if os.path.isfile(full) and os.access(full, os.X_OK):
+            return full
+    return None
+
+
+def fold_structure(sequence, out_dir):
+    """
+    Fold the sequence using local ESM3 open model.
+    If sequence length > 384, a warning is issued.
+    
+    Args:
+        sequence (str): Protein sequence.
+        out_dir (str): Directory to save folded structure.
+    
+    Returns:
+        str: Path to folded PDB file.
+    """
+    import logging
+    import torch
+    try:
+        from esm.models.esm3 import ESM3
+        from esm.sdk.api import ESM3InferenceClient, ESMProtein, GenerationConfig
+        from esm.pretrained import load_local_model
+        from esm.utils.constants.models import (ESM3_OPEN_SMALL,
+                                                normalize_model_name)
+    except ImportError:
+        logging.error("ESM3 modules not found.")
+        sys.exit(1)
+    if len(sequence) > 384:
+        logging.warning("Sequence length > 384. ESM3 may truncate the tail.")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_name = normalize_model_name("esm3-open")
+    model = load_local_model(model_name, device=device)
+    if device.type != "cpu":
+        model = model.to(torch.bfloat16)
+    protein = ESMProtein(sequence=sequence)
+    conf = GenerationConfig(track="structure", num_steps=1)
+    protein = model.generate(protein, conf)
+    folded_pdb = os.path.join(out_dir, "folded_structure.pdb")
+    protein.to_pdb(folded_pdb)
+    logging.info("Folded structure -> %s", folded_pdb)
+    return folded_pdb
+
+
+def optimize_side_chains(pdb_file, out_dir):
+    """
+    Optimize side chains using SCWRL4.
+    
+    Args:
+        pdb_file (str): Input PDB file.
+        out_dir (str): Output directory.
+    
+    Returns:
+        str: Path to optimized PDB file.
+    """
+    import logging
+    optimized_pdb = os.path.join(out_dir, "optimized_structure.pdb")
+    scwrl = shutil_which("Scwrl4")
+    if not scwrl:
+        logging.error("SCWRL4 not found in PATH.")
+        sys.exit(1)
+    cmd = [scwrl, "-i", pdb_file, "-o", optimized_pdb]
+    logging.info("Running SCWRL4 ...")
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        logging.error("SCWRL4 fail: %s", res.stderr)
+        sys.exit(1)
+    logging.info("Optimized -> %s", optimized_pdb)
+    return optimized_pdb
+
+
+def forge_fold_structure(sequence, header, out_dir, max_retries=5,
+                         rate_limit=5):
+    """
+    Fold the sequence using the Forge client (esm3 98B model).
+    Retries are applied for rate limiting.
+    
+    Args:
+        sequence (str): Protein sequence.
+        header (str): Protein header.
+        out_dir (str): Directory to save folded structure.
+        max_retries (int): Maximum number of retries.
+        rate_limit (int): Requests allowed per minute.
+    
+    Returns:
+        str: Path to folded PDB file.
+    """
+    try:
+        from esm.sdk.forge import ESM3ForgeInferenceClient
+        from esm.sdk.api import ESMProtein, GenerationConfig
+    except ImportError:
+        logging.error("ESM Forge modules not found.")
+        sys.exit(1)
+    token = os.getenv("PLMPG_FORGE_TOKEN")
+    if token is None:
+        logging.error("PLMPG_FORGE_TOKEN not set.")
+        sys.exit(1)
+    model = ESM3ForgeInferenceClient(model=FORGE_MDL, url=FORGE_URL,
+                                     token=token)
+    protein = ESMProtein(sequence=sequence,
+                         potential_sequence_of_concern=True)
+    retries = 0
+    backoff = 1
+    while retries < max_retries:
+        try:
+            time.sleep(60 / rate_limit)
+            conf = GenerationConfig(track="structure", num_steps=1)
+            struct = model.generate(protein, conf)
+            pdb_file = os.path.join(out_dir, "folded_structure.pdb")
+            struct.to_pdb(pdb_file)
+            logging.info("Folded structure -> %s", pdb_file)
+            return pdb_file
+        except Exception as e:
+            if "429" in str(e):
+                retries += 1
+                sleep_time = backoff + np.random.uniform(0, 0.5)
+                logging.info("Rate limit exceeded. Retrying... Attempt %d "
+                             "after %.2fs.", retries, sleep_time)
+                time.sleep(sleep_time)
+                backoff *= 2
+            else:
+                logging.error("Unexpected error during forge fold: %s", e)
+                break
+    logging.error("Failed to generate structure via forge.")
+    sys.exit(1)
+
+
+def parse_args():
+    """
+    Parse command-line arguments.
+    
+    Returns:
+        argparse.Namespace: Parsed arguments.
+    """
+    parser = argparse.ArgumentParser(
+        description="KaML-ESM Inference Pipeline: end-to-end pKa prediction."
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--seq", type=str,
+                       help="Input amino acid sequence")
+    group.add_argument("--pdb", type=str,
+                       help="Path to input PDB file")
+    group.add_argument("--pdbid", type=str,
+                       help="PDB ID to fetch structure")
+    group.add_argument("--uniprot", type=str,
+                       help="UniProt ID to fetch seq")
+    parser.add_argument("--nopdb", action="store_true",
+                        help="Skip structure output step")
+    parser.add_argument("--outdir", type=str, default="output",
+                        help="Output directory")
+    parser.add_argument("--nproc", type=int, default=4,
+                        help="Number of threads for parallel inference")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable debug mode for verbose logging")
+    parser.add_argument("--localfold", action="store_true",
+                        help="Use local folding with esm3-open and SCWRL4")
+    return parser.parse_args()
+
+
+def main():
+    """
+    Main function to run the KaML-ESM pipeline.
+    """
+    args = parse_args()
+    os.makedirs(args.outdir, exist_ok=True)
+    log_file = os.path.join(args.outdir, "pipeline.log")
+    setup_logging(log_file, debug=args.debug)
+    logging.info("Starting KaML-ESM pipeline...")
+
+    global PRELOADED_ACIDIC_WEIGHTS, PRELOADED_BASIC_WEIGHTS
+    logging.info("Preloading AcidicMLP weights ...")
+    PRELOADED_ACIDIC_WEIGHTS = preload_weights(ACIDIC_MODEL_DIR, "acidic")
+    logging.info("Preloading BasicMLP weights ...")
+    PRELOADED_BASIC_WEIGHTS = preload_weights(BASIC_MODEL_DIR, "basic")
+
+    sequence = None
+    structure_file = None
+    residue_info = None
+
+    if args.seq:
+        sequence = args.seq
+        header = ">user-provided-sequence"
+    elif args.uniprot:
+        sequence = fetch_uniprot_sequence(args.uniprot)
+        header = f">{args.uniprot}"
+    elif args.pdb or args.pdbid:
+        if args.pdb:
+            structure_file = args.pdb
+        else:
+            structure_file = os.path.join(args.outdir,
+                                          f"{args.pdbid}.pdb")
+            structure_file = fetch_pdb(args.pdbid, structure_file)
+        sequence, residue_info = parse_pdb_to_sequence(structure_file)
+        header = f">{structure_file}"
+    else:
+        logging.error("No valid input.")
+        sys.exit(1)
+
+    if not structure_file and not args.nopdb:
+        if args.localfold:
+            # Use local folding (esm3-open + SCWRL4)
+            folded = fold_structure(sequence, args.outdir)
+        else:
+            # Default: use Forge client folding (esm3 98B model)
+            folded = forge_fold_structure(sequence, header, args.outdir)
+        if not args.nopdb:
+            structure_file = folded
+            if args.localfold:
+              structure_file = optimize_side_chains(folded, args.outdir)
+        else:
+            structure_file = folded
+        seq_from_pdb, residue_info = parse_pdb_to_sequence(structure_file)
+        if len(seq_from_pdb) != len(sequence):
+            logging.warning("Folded structure seq mismatch vs input!")
+
+    if residue_info is None:
+        # If no structure was provided, build residue info with sequential indices.
+        residue_info = [(aa, str(i + 1), "X", i + 1)
+                        for i, aa in enumerate(sequence)]
+
+    logging.info("Extracting embeddings ...")
+    esm2_res = extract_esm2_representation(sequence, header)
+    emb_esm2 = esm2_res["representations"][ESM2_REPR[0]]
+
+    esmc_res = extract_esmc_representation(sequence, header)
+    emb_esmc = esmc_res["representations"][ESMC_REPR[0]]
+
+    def get_titratable_info(ri, chan):
+        idx = get_titratable_indices(ri, chan)
+        return idx, [ri[i] for i in idx]
+
+    a_idx, a_info = get_titratable_info(residue_info, "acidic")
+    b_idx, b_info = get_titratable_info(residue_info, "basic")
+
+    emb_a = emb_esm2[a_idx]
+    emb_b = emb_esmc[b_idx]
+
+    logging.info("Running ensemble: acidic ...")
+    preds_acidic = run_ensemble_inference(emb_a, a_info, "acidic",
+                                          args.nproc,
+                                          PRELOADED_ACIDIC_WEIGHTS)
+
+    logging.info("Running ensemble: basic ...")
+    preds_basic = run_ensemble_inference(emb_b, b_info, "basic",
+                                         args.nproc,
+                                         PRELOADED_BASIC_WEIGHTS)
+
+    final_preds = {}
+    for res in residue_info:
+        # Use sequential index when constructing the UID.
+        rname, rseq, ch, seq_index = res
+        uid = f"{rname}_{seq_index}_{ch}"
+        if uid in preds_acidic:
+            final_preds[uid] = preds_acidic[uid]
+        elif uid in preds_basic:
+            final_preds[uid] = preds_basic[uid]
+        else:
+            final_preds[uid] = 0.0
+
+    csv_out = os.path.join(args.outdir, "predictions.csv")
+    write_predictions_csv(final_preds, csv_out)
+
+    if not args.nopdb and structure_file:
+        pdb_out = os.path.join(args.outdir, "predicted_structure.pdb")
+        update_pdb_beta_factors(structure_file, final_preds, pdb_out)
+
+    logging.info("Pipeline done.")
+
+
+if __name__ == "__main__":
+    main()
+

@@ -1,0 +1,6 @@
+setup.py
+plmpg.egg-info/PKG-INFO
+plmpg.egg-info/SOURCES.txt
+plmpg.egg-info/dependency_links.txt
+plmpg.egg-info/not-zip-safe
+plmpg.egg-info/top_level.txt
