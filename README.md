@@ -75,8 +75,11 @@ The pipeline outputs:
 - **env/setup_envs.sh**  
   Shell script to set up Conda or venv environments and install dependencies.
 
-  - **src/plmpg/esm2**  
-  Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm3/C.
+- **src/plmpg/esm2**  
+Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm3/C.
+
+- **wts**  
+ saved model weights for esm2 and esmC acidic and basic channels
 
 - **README.md**  
   This documentation file.
