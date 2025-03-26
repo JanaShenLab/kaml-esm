@@ -69,11 +69,14 @@ The pipeline outputs:
 
 ## Code Structure
 
-- **pipeline.py**  
-  Main code for embedding extraction, inference, and structure updates.
+- **bin/KaML-ESM**  
+  Main executable for embedding extraction, inference, and structure updates.
   
 - **env/setup_envs.sh**  
   Shell script to set up Conda or venv environments and install dependencies.
+
+  - **src/plmpg/esm2**  
+  Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm3/C.
 
 - **README.md**  
   This documentation file.
