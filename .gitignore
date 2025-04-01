@@ -7,3 +7,5 @@ output/
 
 # But don't ignore .gitignore
 !.gitignore
+
+bin/KaML-ESM.bak
