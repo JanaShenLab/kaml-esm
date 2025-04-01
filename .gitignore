@@ -9,3 +9,4 @@ output/
 !.gitignore
 
 bin/KaML-ESM.bak
+..gitignore.*
