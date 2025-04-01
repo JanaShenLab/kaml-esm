@@ -171,7 +171,7 @@ def fetch_uniprot_sequence(uniprot_id):
         with urllib.request.urlopen(url) as response:
             fasta_data = response.read().decode("utf-8")
         lines = fasta_data.splitlines()
-        seq = "".join(line.strip() for line in lines 
+        seq = "".join(line.strip() for line in lines
                       if not line.startswith(">"))
         logging.debug("Fetched UniProt seq %s: %s... (len %d)",
                       uniprot_id, seq[:30], len(seq))
@@ -440,7 +440,8 @@ def inference_worker(ensemble_ids, embeddings, filt_res_info,
     import torch
     import numpy as np
     import logging
-    from __main__ import GLOBAL_MLP_CLASSES, norm_dict, model_pka_dict, THREE_TO_ONE
+    from __main__ import GLOBAL_MLP_CLASSES, norm_dict, model_pka_dict, \
+         THREE_TO_ONE
     worker_preds = {}
     try:
         logging.debug("Worker started for channel=%s, ensemble_ids=%s",
@@ -471,10 +472,12 @@ def inference_worker(ensemble_ids, embeddings, filt_res_info,
                 aa = THREE_TO_ONE.get(res_name.upper(), "X")
                 base_pka = model_pka_dict.get(aa, 0.0)
                 if abs(raw_pred) < 1e-9:
+                    shift = 0.0
                     final = 0.0
                 else:
-                    final = pred_back + base_pka
-                worker_preds.setdefault(uid, []).append(final)
+                    shift = pred_back
+                    final = shift + base_pka
+                worker_preds.setdefault(uid, []).append((final, shift))
         logging.debug("Worker done for channel=%s, ensemble_ids=%s",
                       channel, ensemble_ids)
         return worker_preds
@@ -515,31 +518,39 @@ def run_ensemble_inference(embeddings, filt_res_info,
                         desc=f"Inference {channel}", ncols=80, ascii=True):
             try:
                 w_preds = fut.result()
-                for uid, preds in w_preds.items():
-                    all_preds.setdefault(uid, []).extend(preds)
+                for uid, tup_list in w_preds.items():
+                    all_preds.setdefault(uid, []).extend(tup_list)
             except Exception as e:
                 logging.error("Exception in worker thread:")
                 logging.error(e)
     avg_preds = {}
-    for uid, vals in all_preds.items():
-        avg_preds[uid] = np.mean(vals) if vals else 0.0
+    for uid, tup_list in all_preds.items():
+        finals = [t[0] for t in tup_list]
+        shifts = [t[1] for t in tup_list]
+        avg_final = np.mean(finals) if finals else 0.0
+        avg_shift = np.mean(shifts) if shifts else 0.0
+        avg_preds[uid] = (avg_final, avg_shift)
     logging.debug("Averaged predictions: %s", avg_preds)
     return avg_preds
 
 def write_predictions_csv(predictions, out_csv):
     """
-    Write predictions to CSV.
+    Write predictions to CSV with final pKa and shift.
     """
     import logging
     with open(out_csv, "w") as f:
-        f.write("Residue_ID,Predicted_pKa\n")
-        for uid, pka in predictions.items():
-            f.write(f"{uid},{pka:.2f}\n")
+        f.write("Residue_ID,Predicted_pKa,Predicted_Shift\n")
+        for uid, vals in predictions.items():
+            if isinstance(vals, tuple):
+                final, shift = vals
+            else:
+                final, shift = vals, 0.0
+            f.write(f"{uid},{final:.2f},{shift:.2f}\n")
     logging.info("Wrote CSV to %s", out_csv)
 
 def update_pdb_beta_factors(pdb_file, predictions, out_pdb):
     """
-    Update PDB file: set all ATOM records' beta to predicted pKa.
+    Update PDB file: set all ATOM records' beta to predicted shift.
     """
     import logging
     updated_lines = []
@@ -558,7 +569,8 @@ def update_pdb_beta_factors(pdb_file, predictions, out_pdb):
                 residue_counter += 1
                 last_key = key
                 current_uid = f"{res_name}_{residue_counter}_{chain_id}"
-            beta_val = predictions.get(current_uid, 0.0)
+            # Use the shift (index 1 of the tuple), default to 0.0.
+            beta_val = predictions.get(current_uid, (0.0, 0.0))[1]
             new_beta = f"{beta_val:6.2f}"
             new_line = line[:60] + new_beta + line[66:]
             updated_lines.append(new_line)
@@ -860,7 +872,7 @@ def main():
         elif uid in preds_basic:
             final_preds[uid] = preds_basic[uid]
         else:
-            final_preds[uid] = 0.0
+            final_preds[uid] = (0.0, 0.0)
 
     csv_out = os.path.join(args.outdir, "predictions.csv")
     write_predictions_csv(final_preds, csv_out)
