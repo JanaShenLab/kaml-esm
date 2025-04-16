@@ -88,7 +88,7 @@ Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm
 
 If you use the KaML-ESM Inference Pipeline in your research, please cite:
 
-Protein Electrostatics are Fine-Tuned by Evolution, Shen, M. Dayhoff II G.W, Shen, J. 2025
+Protein Electrostatic Properties are Fine-Tuned Through Evolution, Shen, M. Dayhoff II G.W, Shen, J. 2025, (In-Review)
 
 ## License
 
