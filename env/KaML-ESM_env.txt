@@ -1,16 +1,20 @@
 # === Core Models ===
 esm==3.1.3           # esm3 (via pip)
-#esm2 is vendored into src/plmpg/esm2
+# esm2 is vendored into src/plmpg/esm2
 
 # === ML & Numerical ===
 torch==2.5.1
 numpy==1.26.4
-scikit-learn==1.6.0
-scipy==1.15.0
-pandas==2.2.3
+scikit-learn==1.4.2
+scipy==1.11.4
+pandas==2.1.4
+pycaret==3.3.2       # for CBtree regression
+biopandas
+catboost==1.2.8
+category_encoders==2.7.0
 
 # === Visualization ===
-matplotlib==3.10.0
+matplotlib==3.7.5
 seaborn==0.13.2
 
 # === CUDA / GPU Support ===
@@ -43,11 +47,12 @@ fairscale==0.4.13
 einops==0.8.0
 filelock==3.16.1
 fsspec==2024.12.0
+cloudpickle==3.1.1
 
 # === Bio + Structural Packages ===
 biopython==1.85
 biotite==0.41.2
-freesasa
+freesasa==2.2.1
 
 # === Scientific Support ===
 sympy==1.13.1
@@ -70,7 +75,7 @@ six==1.17.0
 python-dateutil==2.9.0.post0
 pytz==2024.2
 tzdata==2024.2
-joblib==1.4.2
+joblib==1.3.2
 colorama==0.4.6
 MarkupSafe==3.0.2
 Jinja2==3.1.5
@@ -120,9 +125,6 @@ venusian==3.1.1
 WebOb==1.8.9
 WTForms==3.2.1
 wtforms-recaptcha==0.3.2
-zope.deprecation==5.0
-zope.interface==7.2
-zope.sqlalchemy==3.1
 Brotli==1.1.0
 cloudpathlib==0.20.0
 msgpack==1.1.0
@@ -130,6 +132,9 @@ msgpack-numpy==0.4.8
 tenacity==9.0.0
 
 # --- PDBFixer and its requirements ---
-openmm==8.2              # PDBFixer depends on OpenMM
-pdbfixer @ git+https://github.com/openmm/pdbfixer.git
+openmm==8.2.0              # PDBFixer depends on OpenMM
+pdbfixer @ git+https://github.com/openmm/pdbfixer.git@5a6c129fb5b508610542634eafa218fb0e0671fe
+
+# editable install of KaML‑ESM source
 -e ../src
+

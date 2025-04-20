@@ -198,6 +198,8 @@ def parse_args():
                    help="Output directory")
     p.add_argument("--nproc",     type=int, default=1,
                    help="Parallel workers for multi-fasta")
+    p.add_argument("--nthreads", type=int, default=1,
+                   help="Threads per sequence for ensemble inference")
     p.add_argument("--debug",     action="store_true",
                    help="Enable debug logging")
     p.add_argument("--skip_safety", action="store_true",
@@ -1113,7 +1115,7 @@ def process_single_pipeline(
 
             logging.info("Running ensemble: acidic (chain %s)...", chain)
             preds_acidic = run_acidic_inference(
-                emb_a, a_info, acidic_channel, args.nproc
+                emb_a, a_info, acidic_channel, args.nthreads
             )
 
             logging.info("Running ensemble: basic (chain %s)...", chain)
@@ -1123,7 +1125,7 @@ def process_single_pipeline(
                 emb_b,
                 b_info,
                 "basic",
-                args.nproc,
+                args.nthreads,
                 PRELOADED_BASIC_WEIGHTS,
             )
 
@@ -1214,14 +1216,14 @@ def process_single_pipeline(
 
     logging.info("Running ensemble: acidic ...")
     preds_acidic = run_acidic_inference(
-        emb_a, a_info, acidic_channel_name, args.nproc
+        emb_a, a_info, acidic_channel_name, args.nthreads
     )
 
     logging.info("Running ensemble: basic ...")
     from __main__ import PRELOADED_BASIC_WEIGHTS
 
     preds_basic = run_ensemble_inference(
-        emb_b, b_info, "basic", args.nproc, PRELOADED_BASIC_WEIGHTS
+        emb_b, b_info, "basic", args.nthreads, PRELOADED_BASIC_WEIGHTS
     )
 
     final_preds = {}
