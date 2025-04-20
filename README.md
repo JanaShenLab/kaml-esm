@@ -9,9 +9,9 @@ multi‑FASTA inputs, with configurable channels.
 KaML‑ESM runs:
 - Embedding extraction (ESM2 or ESMC)
 - Ensemble inference (AcidicMLP & BasicMLP)
-- Optional structure folding & optimization
-- Optional CBTREE refinement
-- Results export (CSV, updated PDB, logs)
+- Structure folding (ESM3-medium)
+- Confomer-based inference (KaML-CBTree)
+- Results export (CSV, beta-factor-labeled PDB, logs)
 
 ## Features
 
