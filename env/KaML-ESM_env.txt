@@ -133,3 +133,8 @@ tenacity==9.0.0
 openmm==8.2              # PDBFixer depends on OpenMM
 pdbfixer @ git+https://github.com/openmm/pdbfixer.git
 -e ../src
+
+# --- KaML CBtree reqs ---
+catboost==1.2.8
+biopandas==0.5.1
+pycaret==3.3.2
