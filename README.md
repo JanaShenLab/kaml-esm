@@ -27,14 +27,15 @@ KaML‑ESM runs:
     • Basic:  `--basic`  (`esm2` or `esmC`)
 
 - **Structure**:  
-    • Default: Forge folding via `ESM_FORGE_TOKEN`  
-    • Local: `--localfold` to use ESM3‑open + SCWRL4  
+    • Default: Forge folding* via `ESM_FORGE_TOKEN`  
+    • `--nofold` (do not fold a structure, will disable CBTree unless pdbid/pdb provided)  
+    \* in our tests folding takes approximately 20s on average
 
 - **Safety**:  
     • `--skip_safety` to bypass ESM safety filter (permission required)  
 
 - **CBTREE**:  
-    • Disabled with `--nocbtree`  
+    • Disabled with `--nocbtree` and `--nofold` unless a pdb or pdbID is input 
 
 ## Requirements
 
@@ -82,9 +83,9 @@ Skip safety filter (requires permission):
 
     KaML-ESM --seq "MEEPQSDPSV..." --skip_safety
 
-Use local folding:
+Skip structure folding:
 
-    KaML-ESM --seq "MEEPQSDPSV..." --localfold
+    KaML-ESM --seq "MEEPQSDPSV..." --nofold
 
 Disable CBTREE:
 
