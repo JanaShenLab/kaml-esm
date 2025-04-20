@@ -615,21 +615,21 @@ def write_predictions_csv(predictions, out_csv):
     if include_cbtree:
         headers = [
             "Residue_ID",
-            "Predicted_pKa",
-            "Predicted_Shift",
-            "Error",
-            "CBTREE_pKa",
+            "Pred_pKa",
+            "Pred_Shift",
+            "Pred_Err",
+            "Conf_pKa",
         ]
-        widths = [15, 15, 15, 10, 15]
+        widths = [10, 12, 12, 10, 10]
     else:
         headers = [
             "Residue_ID",
-            "Predicted_pKa",
-            "Predicted_Shift",
+            "Pred_pKa",
+            "Pred_Shift",
             "Error",
         ]
-        widths = [15, 15, 15, 10]
-    header_line = "".join(f"{h:<{w}}" for h, w in zip(headers, widths))
+        widths = [10, 12, 12, 10]
+    header_line = "".join(f"{h:>{w}}" for h, w in zip(headers, widths))
     with open(out_csv, "w") as f:
         f.write(header_line + "\n")
         for uid, vals in predictions.items():
