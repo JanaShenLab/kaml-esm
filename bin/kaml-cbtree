@@ -7,6 +7,11 @@ from pycaret.regression import load_model
 
 import plmpg.cbtrees.features as features
 
+# make all “wts” lookups relative to the script file itself
+SCRIPT_DIR = os.path.abspath(os.path.dirname(__file__))
+WTS_ROOT   = os.path.normpath(os.path.join(SCRIPT_DIR, os.pardir, "wts"))
+CBTREE_MODEL_DIR = os.path.join(WTS_ROOT, "CBtree")
+
 # numeric + categorical columns
 num_cols = [
     'com_min_d0_polar', 'com_min_d1_polar', 'com_min_d0_nonpolar',
@@ -75,9 +80,9 @@ def main():
     df1 = pd.read_csv(io.StringIO(feats_str))
     df1 = df1[num_cols + cat_cols]
 
-    # Load models
-    model_a = load_model("../wts/CBtree/acidic")
-    model_b = load_model("../wts/CBtree/basic")
+    # Load models (paths now relative to the script file)
+    model_a = load_model(os.path.join(CBTREE_MODEL_DIR, "acidic"), verbose=False)
+    model_b = load_model(os.path.join(CBTREE_MODEL_DIR, "basic"),  verbose=False)
 
     print("Predicting ...")
     pred_a = model_a.predict(df1)

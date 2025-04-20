@@ -39,7 +39,7 @@ import warnings
 warnings.filterwarnings(
     "ignore",
     message="Entity ID not found in metadata, using None as default",
-    module="esm.utils.structure.protein_complex"
+    module="esm.utils.structure.protein_complex",
 )
 warnings.simplefilter("ignore", FutureWarning)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -47,7 +47,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # -------- Global Extraction Parameters --------
 ESM2_MODEL = "esm2_t33_650M_UR50D"
 ESM2_TOKS_PER_BATCH = 4096
-ESM2_TRUNTO = 1022   # We must switch to ESMC if sequence length > 1022
+ESM2_TRUNTO = 1022   # switch to ESMC if seq length > 1022
 ESM2_INCLUDE = ["per_tok"]
 ESM2_REPR = [31]
 ESM2_ATTN_ROI = ["LC3D", "ABPP"]
@@ -59,59 +59,59 @@ ESMC_INCLUDE = ["per_tok"]
 ESMC_REPR = [80]
 ESMC_ATTN_ROI = ["LC3D", "ABPP"]
 
-# ---- Global Folding Parameters for Forge Client --------
+# ---- Global Folding Params for Forge Client --------
 FORGE_URL = "https://forge.evolutionaryscale.ai"
 FORGE_MDL = "esm3-medium-2024-08"
 
-# -------- Global Inference Parameters --------
+# -------- Global Inference Params --------
 norm_dict = {
     0: [2.3, 0.24], 1: [2.29, 0.22], 2: [2.29, 0.23],
     3: [2.31, 0.24], 4: [2.31, 0.24], 5: [2.32, 0.24],
     6: [2.29, 0.26], 7: [2.29, 0.28], 8: [2.32, 0.23],
     9: [2.33, 0.24], 10: [2.28, 0.21], 11: [2.33, 0.25],
     12: [2.32, 0.22], 13: [2.31, 0.22], 14: [2.29, 0.29],
-    15: [2.28, 0.2], 16: [2.3, 0.27], 17: [2.31, 0.22],
-    18: [2.3, 0.22], 19: [2.28, 0.19]
+    15: [2.28, 0.20], 16: [2.30, 0.27], 17: [2.31, 0.22],
+    18: [2.30, 0.22], 19: [2.28, 0.19],
 }
 model_pka_dict = {
-    "D": 3.7, "E": 4.2, "H": 6.5, "C": 8.5, "K": 10.4, "Y": 10.1
+    "D": 3.7, "E": 4.2, "H": 6.5, "C": 8.5, "K": 10.4, "Y": 10.1,
 }
 residue_groups = {
     "acidic": ["D", "E", "C", "Y"],
-    "basic":  ["H", "K"]
+    "basic":  ["H", "K"],
 }
 
 THREE_TO_ONE = {
-    "ALA":"A", "CYS":"C", "ASP":"D", "GLU":"E", "PHE":"F", "GLY":"G",
-    "HIS":"H", "ILE":"I", "LYS":"K", "LEU":"L", "MET":"M", "ASN":"N",
-    "PRO":"P", "GLN":"Q", "ARG":"R", "SER":"S", "THR":"T", "VAL":"V",
-    "TRP":"W", "TYR":"Y"
+    "ALA": "A", "CYS": "C", "ASP": "D", "GLU": "E", "PHE": "F",
+    "GLY": "G", "HIS": "H", "ILE": "I", "LYS": "K", "LEU": "L",
+    "MET": "M", "ASN": "N", "PRO": "P", "GLN": "Q", "ARG": "R",
+    "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y",
 }
 
 # For toggling acidic channel if seq > 1022
-ACIDIC_MODEL_DIR       = "wts/esm2/acidic"
-BASIC_MODEL_DIR        = "wts/esmC/basic"
-CBTREE_MODEL_DIR       = "wts/CBtree/"
-ACIDIC_MODEL_DIR_ESM2  = "wts/esm2/acidic"
-ACIDIC_MODEL_DIR_ESMC  = "wts/esmC/acidic"
+ACIDIC_MODEL_DIR      = "wts/esm2/acidic"
+BASIC_MODEL_DIR       = "wts/esmC/basic"
+CBTREE_MODEL_DIR      = "wts/CBtree"
+ACIDIC_MODEL_DIR_ESM2 = "wts/esm2/acidic"
+ACIDIC_MODEL_DIR_ESMC = "wts/esmC/acidic"
 
-PRELOADED_ACIDIC_WEIGHTS        = {}
-PRELOADED_BASIC_WEIGHTS         = {}
-PRELOADED_ACIDIC_WEIGHTS_ESM2   = {}
-PRELOADED_ACIDIC_WEIGHTS_ESMC   = {}
+PRELOADED_ACIDIC_WEIGHTS      = {}
+PRELOADED_BASIC_WEIGHTS       = {}
+PRELOADED_ACIDIC_WEIGHTS_ESM2 = {}
+PRELOADED_ACIDIC_WEIGHTS_ESMC = {}
 
 GLOBAL_MLP_CLASSES = {}
+
+# if True, mark sequences as “of concern” to skip safety filter
+SKIP_SAFETY = False
 
 ########################################
 # Basic MLP Classes
 ########################################
 class BasicMLP(torch.nn.Module):
-    """
-    BasicMLP for the ESMC/basic channel or for any 2560-dim embeddings.
-    Architecture: 2560 -> 1024 -> 512 -> 64 -> 1 with dropout=0.2.
-    """
+    """MLP for ESMC/basic or any 2560-dim embeddings."""
     def __init__(self):
-        super(BasicMLP, self).__init__()
+        super().__init__()
         self.fc1 = torch.nn.Linear(2560, 1024)
         self.bn1 = torch.nn.BatchNorm1d(1024)
         self.fc2 = torch.nn.Linear(1024, 512)
@@ -123,22 +123,16 @@ class BasicMLP(torch.nn.Module):
     def forward(self, x, batch=None):
         act = torch.nn.functional.relu
         drop = torch.nn.Dropout(p=0.2)
-        h = act(self.bn1(self.fc1(x)))
-        h = drop(h)
-        h = act(self.bn2(self.fc2(h)))
-        h = drop(h)
-        h = act(self.bn3(self.fc3(h)))
-        h = drop(h)
+        h = act(self.bn1(self.fc1(x))); h = drop(h)
+        h = act(self.bn2(self.fc2(h))); h = drop(h)
+        h = act(self.bn3(self.fc3(h))); h = drop(h)
         return self.fc4(h)
 
 
 class AcidicMLP(torch.nn.Module):
-    """
-    AcidicMLP for the ESM2/acidic channel or for any 1280-dim embeddings.
-    Architecture: 1280 -> 512 -> 256 -> 32 -> 1 with dropout=0.2.
-    """
+    """MLP for ESM2/acidic or any 1280-dim embeddings."""
     def __init__(self):
-        super(AcidicMLP, self).__init__()
+        super().__init__()
         self.fc1 = torch.nn.Linear(1280, 512)
         self.fc2 = torch.nn.Linear(512, 256)
         self.bn2 = torch.nn.BatchNorm1d(256)
@@ -149,12 +143,9 @@ class AcidicMLP(torch.nn.Module):
     def forward(self, x, batch=None):
         act = torch.nn.functional.relu
         drop = torch.nn.Dropout(p=0.2)
-        h = self.fc1(x)
-        h = drop(h)
-        h = act(self.bn2(self.fc2(h)))
-        h = drop(h)
-        h = act(self.bn3(self.fc3(h)))
-        h = drop(h)
+        h = self.fc1(x); h = drop(h)
+        h = act(self.bn2(self.fc2(h))); h = drop(h)
+        h = act(self.bn3(self.fc3(h))); h = drop(h)
         return self.fc4(h)
 
 
@@ -162,14 +153,16 @@ class AcidicMLP(torch.nn.Module):
 # Setup Logging & Splash
 ########################################
 def setup_logging(log_file, debug=False):
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(filename=log_file, filemode="w", level=level,
-                        format="%(asctime)s - %(levelname)s - %(message)s")
-    logging.debug("Debug logging is enabled.")
+    lvl = logging.DEBUG if debug else logging.INFO
+    logging.basicConfig(
+        filename=log_file, filemode="w", level=lvl,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    logging.debug("Debug logging enabled.")
 
 
 def splash():
-    print("--------------------------------------------------------------------------------")
+    print("-" * 80)
     print(r"""
  ____            ____   __    __                   __       __  __
 |    \          |    \|  \  /  \                 |  \     /  \|  \
@@ -181,38 +174,43 @@ def splash():
 | $$ \| $$    $$|   $$| $$  \$$\\$$    $$        | $$  \$ | $$| $$     \
  \$$$$| $$$$$$$  \$$$$ \$$   \$$ \$$$$$$$         \$$      \$$ \$$$$$$$$
       | $$
-      | $$                    Mingzhe Shen & Guy 'Wayyne' Dayhoff II
-       \$$                       March 2025, School of Pharmacy
-                                    University of Maryland Baltimore
---------------------------------------------------------------------------------
+      | $$                    Mingzhe Shen & Guy Dayhoff II
+       \$$                       March 2025, UMB School of Pharmacy
 """)
+    print("-" * 80)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="KaML-ESM pipeline with single‐bar multi-FASTA parallelization."
+    p = argparse.ArgumentParser(
+        description="KaML-ESM pipeline with single‐bar multi-FASTA."
     )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--seq",     type=str, help="Input amino acid sequence")
-    group.add_argument("--pdb",     type=str, help="Path to input PDB file")
-    group.add_argument("--pdbid",   type=str, help="PDB ID to fetch structure")
-    group.add_argument("--uniprot", type=str, help="UniProt ID to fetch seq")
-    group.add_argument("--fasta",   type=str, help="Path to multi-FASTA file")
-
-    parser.add_argument("--nopdb",     action="store_true", help="Skip structure output step")
-    parser.add_argument("--outdir",    type=str, default="output", help="Output directory")
-    parser.add_argument("--nproc",     type=int, default=1,
-                        help="Parallel workers for multi-fasta mode. Single bar in main process.")
-    parser.add_argument("--debug",     action="store_true", help="Enable debug logging.")
-    parser.add_argument("--localfold", action="store_true", help="Use local folding (esm3-open + SCWRL4)")
-
-    parser.add_argument("--acidic", type=str, default="esm2", choices=["esm2", "esmC"],
-                        help="Model choice for acidic channel (ignored if len>1022).")
-    parser.add_argument("--basic",  type=str, default="esmC", choices=["esm2", "esmC"],
-                        help="Model choice for basic channel (default: esmC).")
-    parser.add_argument("--nocbtree", action="store_true",
-                        help="Skip CBTREE channel predictions.")
-    return parser.parse_args()
+    grp = p.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--seq",     type=str, help="Input amino acid sequence")
+    grp.add_argument("--pdb",     type=str, help="Path to input PDB file")
+    grp.add_argument("--pdbid",   type=str, help="PDB ID to fetch structure")
+    grp.add_argument("--uniprot", type=str, help="UniProt ID to fetch seq")
+    grp.add_argument("--fasta",   type=str, help="Path to multi-FASTA file")
+    p.add_argument("--nopdb",     action="store_true",
+                   help="Skip structure output step")
+    p.add_argument("--outdir",    type=str, default="output",
+                   help="Output directory")
+    p.add_argument("--nproc",     type=int, default=1,
+                   help="Parallel workers for multi-fasta")
+    p.add_argument("--debug",     action="store_true",
+                   help="Enable debug logging")
+    p.add_argument("--skip_safety", action="store_true",
+                   help="Skip safety filter (ESM permission required)")
+    p.add_argument("--localfold", action="store_true",
+                   help="Use local folding (esm3-open + SCWRL4)")
+    p.add_argument("--acidic", type=str, default="esm2",
+                   choices=["esm2", "esmC"],
+                   help="Acidic channel model (ignored if len>1022)")
+    p.add_argument("--basic",  type=str, default="esmC",
+                   choices=["esm2", "esmC"],
+                   help="Basic channel model")
+    p.add_argument("--nocbtree", action="store_true",
+                   help="Skip CBTREE predictions")
+    return p.parse_args()
 
 
 ########################################
@@ -221,12 +219,11 @@ def parse_args():
 def fetch_uniprot_sequence(uniprot_id):
     url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
     try:
-        with urllib.request.urlopen(url) as response:
-            fasta_data = response.read().decode("utf-8")
-        lines = fasta_data.splitlines()
-        seq = "".join(line.strip() for line in lines if not line.startswith(">"))
-        logging.debug("Fetched UniProt seq %s: %s... (len %d)",
-                      uniprot_id, seq[:30], len(seq))
+        with urllib.request.urlopen(url) as resp:
+            data = resp.read().decode("utf-8")
+        lines = data.splitlines()
+        seq = "".join(l.strip() for l in lines if not l.startswith(">"))
+        logging.debug("Fetched UniProt %s (len=%d)", uniprot_id, len(seq))
         return seq
     except Exception as e:
         logging.error("Error fetching UniProt %s: %s", uniprot_id, e)
@@ -236,8 +233,8 @@ def fetch_uniprot_sequence(uniprot_id):
 def fetch_pdb(pdb_id, out_path):
     url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
     try:
-        with urllib.request.urlopen(url) as response:
-            pdb_data = response.read().decode("utf-8")
+        with urllib.request.urlopen(url) as resp:
+            pdb_data = resp.read().decode("utf-8")
         with open(out_path, "w") as f:
             f.write(pdb_data)
         logging.debug("Fetched PDB %s -> %s", pdb_id, out_path)
@@ -249,74 +246,99 @@ def fetch_pdb(pdb_id, out_path):
 
 def parse_pdb_to_sequence(pdb_file):
     seq = ""
-    residue_info = []
-    processed = set()
-    seq_index = 1  # sequential numbering
-    with open(pdb_file, "r") as f:
+    info = []
+    seen = set()
+    idx = 1
+    with open(pdb_file) as f:
         for line in f:
             if line.startswith("ATOM") and line[12:16].strip() == "CA":
-                res_name = line[17:20].strip()
-                chain_id = line[21].strip()
-                res_seq  = line[22:26].strip()
-                uid = f"{chain_id}_{res_seq}"
-                if uid in processed:
+                res = line[17:20].strip()
+                ch  = line[21].strip()
+                rn  = line[22:26].strip()
+                uid = f"{ch}_{rn}"
+                if uid in seen:
                     continue
-                processed.add(uid)
-                aa = THREE_TO_ONE.get(res_name.upper(), "X")
+                seen.add(uid)
+                aa = THREE_TO_ONE.get(res.upper(), "X")
                 seq += aa
-                residue_info.append((res_name.upper(), res_seq, chain_id, seq_index))
-                seq_index += 1
-    logging.debug("Parsed PDB %s: seq len %d, residues %d",
-                  pdb_file, len(seq), len(residue_info))
-    return seq, residue_info
+                info.append((res.upper(), rn, ch, idx))
+                idx += 1
+    logging.debug("Parsed PDB %s: len=%d", pdb_file, len(seq))
+    return seq, info
 
 
-def retry_operation(func, max_retries=3, initial_delay=2, backoff_factor=2, jitter=0.5):
+def retry_operation(func, max_retries=3, initial_delay=2,
+                    backoff_factor=2, jitter=0.5):
     import random
     delay = initial_delay
-    for attempt in range(1, max_retries + 1):
+    for attempt in range(1, max_retries+1):
         try:
             result = func()
+            # verbose unauthorized check
+            if "Unauthorized" in str(result):
+              print("\n" + "-"*80)
+              print("\nAlas, the ESM Forge Token you specified returned an 'unauthorized' error.")
+              print("   1. please confirm your token is valid")
+              print("   2. update ESM_FORGE_TOKEN environmental variable")
+              print("      for example: export ESM_FORGE_TOKEN=<your_esm_forge_token>")
+              print("   2. try again\n")
+              sys.exit(1)
+            # verbose sequence concern check
+            elif "potential sequence of concern" in str(result):
+              print("\n\n" + "-"*80)
+              print("\nAlas, the sequence (protein) was flagged as a potential sequence of concern.")
+              print("   1. get permission to skip the safety filter from ESM directly")
+              print("   2. once you have permission, use the --skip_safety flag at runtime")
+              print("   3. try again\n")
+              sys.exit(1)
+            # verbose sequence concern check
+            if "permission" in str(result):
+              print("\n\n" + "-"*80)
+              print("\nAlas, the forge API says you do not have permission to skip the safety filter.")
+              print("   a. get permission to skip the safety filter from ESM directly")
+              print("   b. do not use the --skip_safety flag")
+              sys.exit(1)
+
             logging.debug("Attempt %d: Success.", attempt)
             return result
         except Exception as e:
             if attempt < max_retries:
-                stime = delay + random.uniform(0, jitter)
+                wait = delay + random.uniform(0, jitter)
                 logging.debug("Attempt %d/%d fail: %s. Retry in %.2fs...",
-                              attempt, max_retries, e, stime)
-                time.sleep(stime)
+                              attempt, max_retries, e, wait)
+                time.sleep(wait)
                 delay *= backoff_factor
             else:
-                logging.debug("Attempt %d/%d fail: %s. No more retries.", attempt, max_retries, e)
+                logging.debug("Attempt %d/%d fail: %s. No more retries.",
+                              attempt, max_retries, e)
                 raise
 
 
 def get_titratable_indices(residue_info, channel):
-    indices = []
-    for i, (res_name, res_seq, chain_id, seq_index) in enumerate(residue_info):
-        one_letter = THREE_TO_ONE.get(res_name.upper(), "X")
-        if channel == "acidic" and one_letter in residue_groups["acidic"]:
-            indices.append(i)
-        elif channel == "basic" and one_letter in residue_groups["basic"]:
-            indices.append(i)
-    logging.debug("Titratable indices for %s: %s", channel, indices)
-    return indices
+    idxs = []
+    for i, (res, rn, ch, si) in enumerate(residue_info):
+        aa = THREE_TO_ONE.get(res.upper(), "X")
+        if channel == "acidic" and aa in residue_groups["acidic"]:
+            idxs.append(i)
+        elif channel == "basic" and aa in residue_groups["basic"]:
+            idxs.append(i)
+    logging.debug("Titratable %s indices: %s", channel, idxs)
+    return idxs
 
 
 def parse_residues(header, attn_roi):
-    import re
-    roi_patterns = {field: re.compile(rf"{field}=([\d,]+)") for field in attn_roi}
-    residues = set()
-    for field, pattern in roi_patterns.items():
-        match = pattern.search(header)
-        if match:
-            for num_str in match.group(1).split(","):
+    patterns = {f: re.compile(rf"{f}=([\d,]+)") for f in attn_roi}
+    res = set()
+    for f, pat in patterns.items():
+        m = pat.search(header)
+        if m:
+            for n in m.group(1).split(","):
                 try:
-                    residues.add(int(num_str))
+                    res.add(int(n))
                 except ValueError:
                     pass
-    parsed = sorted(residues)
-    logging.debug("Parsed ROI residues from '%s': %s", header, parsed)
+    parsed = sorted(res)
+    logging.debug("Parsed ROI from '%s': %s", header, parsed)
     return parsed
 
 
@@ -326,14 +348,14 @@ def parse_residues(header, attn_roi):
 def extract_esm2_representation(sequence, header):
     from plmpg.esm2 import pretrained
     from plmpg.esm2.esm.data import FastaBatchedDataset
-    import tempfile
     from torch.utils.data import DataLoader
 
-    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".fasta") as tf:
+    with tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".fasta"
+        ) as tf:
         fasta_header = header if header.startswith(">") else f">{header}"
         tf.write(f"{fasta_header}\n{sequence}\n")
         fasta_path = tf.name
-    logging.debug("Temporary FASTA for ESM2: %s", fasta_path)
 
     model, alphabet = pretrained.load_model_and_alphabet(ESM2_MODEL)
     model.eval()
@@ -342,33 +364,35 @@ def extract_esm2_representation(sequence, header):
         logging.debug("ESM2 -> GPU")
 
     dataset = FastaBatchedDataset.from_file(fasta_path)
-    batches = dataset.get_batch_indices(ESM2_TOKS_PER_BATCH, extra_toks_per_seq=1)
-    data_loader = DataLoader(
+    batches = dataset.get_batch_indices(
+        ESM2_TOKS_PER_BATCH, extra_toks_per_seq=1
+    )
+    loader = DataLoader(
         dataset,
         collate_fn=alphabet.get_batch_converter(ESM2_TRUNTO),
         batch_sampler=batches,
     )
 
     result = {}
-    from tqdm import tqdm
     pbar = tqdm(total=1, desc="Extracting from ESM2", ncols=80, ascii=True)
-    for b_idx, (labels, strs, toks) in enumerate(data_loader):
-        trunc_len = min(ESM2_TRUNTO, len(strs[0]))
+    for labels, strs, toks in loader:
+        trunc = min(ESM2_TRUNTO, len(strs[0]))
         with torch.no_grad():
-            out = model(toks,
-                        repr_layers=[
-                            (i + model.num_layers + 1) % (model.num_layers + 1)
-                            for i in ESM2_REPR
-                        ],
-                        return_contacts=False)
+            out = model(
+                toks,
+                repr_layers=[(i + model.num_layers + 1)
+                             % (model.num_layers + 1)
+                             for i in ESM2_REPR],
+                return_contacts=False,
+            )
         reps = {
-            layer: t[0, 1:trunc_len + 1].clone().cpu()
+            layer: t[0, 1:trunc+1].clone().cpu()
             for layer, t in out["representations"].items()
         }
         result = {
             "hdr": labels[0],
             "seq": strs[0],
-            "roi": parse_residues(labels[0], ESM2_ATTN_ROI)
+            "roi": parse_residues(labels[0], ESM2_ATTN_ROI),
         }
         if "per_tok" in ESM2_INCLUDE:
             result["representations"] = reps
@@ -382,50 +406,53 @@ def extract_esm2_representation(sequence, header):
 def extract_esmc_representation(sequence, header):
     from esm.sdk.forge import ESM3ForgeInferenceClient
     from esm.sdk.api import ESMProtein, LogitsConfig
-    import time
 
     hdr = header if header.startswith(">") else f">{header}"
-    protein = ESMProtein(sequence=sequence, potential_sequence_of_concern=False)
-    token = os.getenv("PLMPG_FORGE_TOKEN")
+    protein = ESMProtein(
+        sequence=sequence,
+        potential_sequence_of_concern=SKIP_SAFETY,
+    )
+    token = os.getenv("ESM_FORGE_TOKEN")
     if token is None:
-        logging.error("PLMPG_FORGE_TOKEN not set.")
+        logging.error("ESM_FORGE_TOKEN not set.")
         sys.exit(1)
-    logging.debug("Using PLMPG_FORGE_TOKEN: %s...", token[:5])
+    logging.debug("Using ESM_FORGE_TOKEN: %s...", token[:5])
 
     forge_client = ESM3ForgeInferenceClient(
         model=ESMC_MODEL,
-        url="https://forge.evolutionaryscale.ai",
-        token=token
+        url=FORGE_URL,
+        token=token,
     )
     cfg = {
         "truncate_len": ESMC_TRUNTO,
         "max_retries": 5,
         "initial_delay": 2,
         "backoff_factor": 2,
-        "jitter": 0.5
+        "jitter": 0.5,
     }
 
     def encode_func():
         return forge_client.encode(protein)
 
-    # We do a retry
     from __main__ import retry_operation
-    protein_tensor = retry_operation(encode_func, max_retries=cfg["max_retries"])
+    protein_tensor = retry_operation(
+        encode_func, max_retries=cfg["max_retries"]
+    )
 
     result = {
         "hdr": hdr,
         "seq": sequence,
-        "roi": parse_residues(hdr, ESMC_ATTN_ROI)
+        "roi": parse_residues(hdr, ESMC_ATTN_ROI),
     }
     trunc_length = min(cfg["truncate_len"], len(sequence))
     reps = {}
 
-    from tqdm import tqdm
-    for layer_i in tqdm(ESMC_REPR, desc="Extracting from ESMC", ncols=80, ascii=True):
+    for layer_i in tqdm(ESMC_REPR, desc="Extracting from ESMC",
+                        ncols=80, ascii=True):
         def extract_layer():
             embed_cfg = LogitsConfig(
                 return_hidden_states=True,
-                ith_hidden_layer=layer_i
+                ith_hidden_layer=layer_i,
             )
             out = forge_client.logits(protein_tensor, embed_cfg)
             if out.hidden_states is None:
@@ -433,7 +460,9 @@ def extract_esmc_representation(sequence, header):
             return out.hidden_states.squeeze()
 
         try:
-            full_h = retry_operation(extract_layer, max_retries=cfg["max_retries"])
+            full_h = retry_operation(
+                extract_layer, max_retries=cfg["max_retries"]
+            )
             if "per_tok" in ESMC_INCLUDE:
                 reps[layer_i] = full_h[1:trunc_length+1].clone().cpu()
         except Exception as e:
@@ -448,16 +477,19 @@ def extract_esmc_representation(sequence, header):
 
 
 ########################################
-# Weight Loading & Ensemble Inference
+# Weight Loading & Inference
 ########################################
 def preload_weights(model_dir, channel):
     import torch
     weights = {}
     num_splits = 20
     replicas = 10
-    from tqdm import tqdm
-    for split in tqdm(range(num_splits), desc=f"Loading {channel} channel weights", ncols=80, ascii=True):
-        for rep in tqdm(range(replicas), desc=f"Split {split} (replicas)", leave=False, ncols=80, ascii=True):
+    for split in tqdm(
+        range(num_splits),
+        desc=f"Loading {channel} channel weights",
+        ncols=80, ascii=True
+    ):
+        for rep in range(replicas):
             fname = f"E{split}f{rep}.pth"
             fpath = os.path.join(model_dir, fname)
             if os.path.isfile(fpath):
@@ -470,10 +502,12 @@ def preload_weights(model_dir, channel):
     return weights
 
 
-def inference_worker(ensemble_ids, embeddings, filt_res_info, channel, weight_dict):
+def inference_worker(ensemble_ids, embeddings, filt_res_info,
+                     channel, weight_dict):
     import torch
     import numpy as np
     from __main__ import GLOBAL_MLP_CLASSES, norm_dict, model_pka_dict, THREE_TO_ONE
+
     worker_preds = {}
     try:
         model = GLOBAL_MLP_CLASSES[channel]()
@@ -505,33 +539,51 @@ def inference_worker(ensemble_ids, embeddings, filt_res_info, channel, weight_di
                     shift = pred_back
                     final = shift + base_pka
                 worker_preds.setdefault(uid, []).append((final, shift))
-
         return worker_preds
     except Exception as e:
-        logging.error("Inference worker error for channel=%s, ensemble_ids=%s: %s", channel, ensemble_ids, e)
+        logging.error(
+            "Inference worker error for channel=%s, ensemble_ids=%s: %s",
+            channel, ensemble_ids, e
+        )
         logging.error(traceback.format_exc())
         return {}
 
 
-def run_ensemble_inference(embeddings, filt_res_info, channel, nproc, weight_dict):
-    import numpy as np
+def run_ensemble_inference(embeddings, filt_res_info, channel,
+                           nproc, weight_dict):
     import math
+    import numpy as np
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     avail_ids = list(weight_dict.keys())
     if nproc < 1:
         nproc = 1
     chunk_size = int(math.ceil(len(avail_ids) / nproc))
-    chunks = [avail_ids[i:i + chunk_size] for i in range(0, len(avail_ids), chunk_size)]
+    chunks = [
+        avail_ids[i : i + chunk_size]
+        for i in range(0, len(avail_ids), chunk_size)
+    ]
 
     all_preds = {}
     with ThreadPoolExecutor(max_workers=nproc) as executor:
-        futs = []
-        for chunk in chunks:
-            fut = executor.submit(inference_worker, chunk, embeddings, filt_res_info, channel, weight_dict)
-            futs.append(fut)
-
-        from tqdm import tqdm
-        for fut in tqdm(as_completed(futs), total=len(futs), desc=f"Inference {channel}", ncols=80, ascii=True):
+        futs = [
+            executor.submit(
+                inference_worker,
+                chunk,
+                embeddings,
+                filt_res_info,
+                channel,
+                weight_dict,
+            )
+            for chunk in chunks
+        ]
+        for fut in tqdm(
+            as_completed(futs),
+            total=len(futs),
+            desc=f"Inference {channel}",
+            ncols=80,
+            ascii=True,
+        ):
             try:
                 w_preds = fut.result()
                 for uid, tup_list in w_preds.items():
@@ -559,17 +611,25 @@ def run_ensemble_inference(embeddings, filt_res_info, channel, nproc, weight_dic
 ########################################
 def write_predictions_csv(predictions, out_csv):
     import logging
-    # Determine if we have CBTREE in predictions
     include_cbtree = any(len(v) == 4 for v in predictions.values())
     if include_cbtree:
-        headers = ["Residue_ID", "Predicted_pKa", "Predicted_Shift", "Error", "CBTREE_pKa"]
-        widths  = [15, 15, 15, 10, 15]
+        headers = [
+            "Residue_ID",
+            "Predicted_pKa",
+            "Predicted_Shift",
+            "Error",
+            "CBTREE_pKa",
+        ]
+        widths = [15, 15, 15, 10, 15]
     else:
-        headers = ["Residue_ID", "Predicted_pKa", "Predicted_Shift", "Error"]
-        widths  = [15, 15, 15, 10]
-
+        headers = [
+            "Residue_ID",
+            "Predicted_pKa",
+            "Predicted_Shift",
+            "Error",
+        ]
+        widths = [15, 15, 15, 10]
     header_line = "".join(f"{h:<{w}}" for h, w in zip(headers, widths))
-
     with open(out_csv, "w") as f:
         f.write(header_line + "\n")
         for uid, vals in predictions.items():
@@ -585,9 +645,20 @@ def write_predictions_csv(predictions, out_csv):
                 final, shift, err, cbtree = 0.0, 0.0, 0.0, 0.0
 
             if include_cbtree:
-                row = f"{uid:<{widths[0]}}{final:>{widths[1]}.2f}{shift:>{widths[2]}.2f}{err:>{widths[3]}.2f}{cbtree:>{widths[4]}.2f}"
+                row = (
+                    f"{uid:<{widths[0]}}"
+                    f"{final:>{widths[1]}.2f}"
+                    f"{shift:>{widths[2]}.2f}"
+                    f"{err:>{widths[3]}.2f}"
+                    f"{cbtree:>{widths[4]}.2f}"
+                )
             else:
-                row = f"{uid:<{widths[0]}}{final:>{widths[1]}.2f}{shift:>{widths[2]}.2f}{err:>{widths[3]}.2f}"
+                row = (
+                    f"{uid:<{widths[0]}}"
+                    f"{final:>{widths[1]}.2f}"
+                    f"{shift:>{widths[2]}.2f}"
+                    f"{err:>{widths[3]}.2f}"
+                )
             f.write(row + "\n")
     logging.info("Wrote predictions to %s", out_csv)
 
@@ -597,19 +668,18 @@ def update_pdb_beta_factors(pdb_file, predictions, out_pdb):
     updated_lines = []
     residue_counter = 0
     last_key = None
-    current_uid = None
     with open(pdb_file, "r") as f:
         lines = f.readlines()
     for line in lines:
         if line.startswith("ATOM"):
             chain_id = line[21].strip()
-            res_seq  = line[22:26].strip()
+            res_seq = line[22:26].strip()
             res_name = line[17:20].strip()
             key = (chain_id, res_seq)
             if key != last_key:
                 residue_counter += 1
                 last_key = key
-                current_uid = f"{res_name}_{residue_counter}_{chain_id}"
+            current_uid = f"{res_name}_{residue_counter}_{chain_id}"
             beta_val = predictions.get(current_uid, (0.0, 0.0, 0.0))[1]
             new_beta = f"{beta_val:6.2f}"
             new_line = line[:60] + new_beta + line[66:]
@@ -639,23 +709,19 @@ def fold_structure(sequence, out_dir):
         from esm.models.esm3 import ESM3
         from esm.sdk.api import ESM3InferenceClient, ESMProtein, GenerationConfig
         from esm.pretrained import load_local_model
-        from esm.utils.constants.models import (ESM3_OPEN_SMALL, normalize_model_name)
+        from esm.utils.constants.models import normalize_model_name
     except ImportError:
         logging.error("ESM3 modules not found.")
         sys.exit(1)
     if len(sequence) > 384:
         logging.warning("Sequence length > 384. ESM3 may truncate tail.")
-    device = torch.device("cuda" if torch.uda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_name = normalize_model_name("esm3-open")
     model = load_local_model(model_name, device=device)
     if device.type != "cpu":
         model = model.to(torch.bfloat16)
-
-    from esm.sdk.api import ESMProtein, GenerationConfig
     protein = ESMProtein(sequence=sequence)
     conf = GenerationConfig(track="structure", num_steps=1)
-
-    from tqdm import tqdm
     with tqdm(total=1, desc="Folding structure", ncols=80, ascii=True) as pbar:
         protein = model.generate(protein, conf)
         pbar.update(1)
@@ -682,34 +748,63 @@ def optimize_side_chains(pdb_file, out_dir):
     return optimized_pdb
 
 
-def forge_fold_structure(sequence, header, out_dir, max_retries=5, rate_limit=5):
+def forge_fold_structure(sequence, header, out_dir,
+                         max_retries=5, rate_limit=5):
     try:
         from esm.sdk.forge import ESM3ForgeInferenceClient
         from esm.sdk.api import ESMProtein, GenerationConfig
     except ImportError:
         logging.error("ESM Forge modules not found.")
         sys.exit(1)
-    token = os.getenv("PLMPG_FORGE_TOKEN")
+    token = os.getenv("ESM_FORGE_TOKEN")
     if token is None:
-        logging.error("PLMPG_FORGE_TOKEN not set.")
+        logging.error("ESM_FORGE_TOKEN not set.")
         sys.exit(1)
-
-    model = ESM3ForgeInferenceClient(model=FORGE_MDL, url=FORGE_URL, token=token)
-    protein = ESMProtein(sequence=sequence, potential_sequence_of_concern=False)
+    model = ESM3ForgeInferenceClient(
+        model=FORGE_MDL, url=FORGE_URL, token=token
+    )
+    protein = ESMProtein(
+        sequence=sequence,
+        potential_sequence_of_concern=SKIP_SAFETY,
+    )
     retries = 0
     backoff = 1
     from tqdm import tqdm
     import numpy as np
-    with tqdm(total=max_retries, desc="Folding structure (Forge)", ncols=80, ascii=True) as pbar:
+    with tqdm(total=1, desc="Folding structure (Forge)", ncols=80,
+              ascii=True, leave=False) as pbar:
         while retries < max_retries:
             try:
                 time.sleep(60 / rate_limit)
                 conf = GenerationConfig(track="structure", num_steps=1)
                 struct = model.generate(protein, conf)
+                # verbose unauthorized
+                if "Unauthorized" in str(struct):
+                  print("\n" + "-"*80)
+                  print("\nAlas, the ESM Forge Token you specified returned an 'unauthorized' error.")
+                  print("   1. please confirm your token is valid")
+                  print("   2. update ESM_FORGE_TOKEN environmental variable")
+                  print("      for example: export ESM_FORGE_TOKEN=<your_esm_forge_token>")
+                  print("   2. try again\n")
+                  sys.exit(1)
+                # verbose sequence concern
+                if "potential sequence of concern" in str(struct):
+                  print("\n\n" + "-"*80)
+                  print("\nAlas, the sequence (protein) was flagged as a potential sequence of concern.")
+                  print("   1. get permission to skip the safety filter from ESM directly")
+                  print("   2. once you have permission, use the --skip_safety flag at runtime")
+                  print("   3. try again\n")
+                  sys.exit(1)
+               #if "not have permission" in str(result):
+               #  print("\n\n" + "-"*80)
+               #  print("\nAlas, the forge API says you do not have permission to skip the safety filter.")
+               #  print("   a. get permission to skip the safety filter from ESM directly")
+               #  print("   b. do not use the --skip_safety flag")
+               #  sys.exit(1)
                 pdb_file = os.path.join(out_dir, "folded_structure.pdb")
                 struct.to_pdb(pdb_file)
                 logging.info("Folded structure -> %s", pdb_file)
-                pbar.update(max_retries - retries)
+                pbar.update(1)
                 return pdb_file
             except Exception as e:
                 if "429" in str(e):
@@ -738,9 +833,9 @@ def run_cb_tree_channel(pdb_file, out_dir, unique_id):
 
     _, residue_info = parse_pdb_to_sequence(pdb_file)
     titr_res = ['ASP','GL','CYS','HIS','TYR','LYS']
-    titrable_info = [res for res in residue_info if res[0] in titr_res]
+    titrable_info = [r for r in residue_info if r[0] in titr_res]
 
-    residues_for_cb = [pdb_file] + [[res[2],res[0],res[1]] for res in titrable_info]
+    residues_for_cb = [pdb_file] + [[r[2],r[0],r[1]] for r in titrable_info]
     feats = features.generate(residues_for_cb)
     tmp_feats = "features.txt"
     with open(tmp_feats, "w") as f:
@@ -759,8 +854,8 @@ def run_cb_tree_channel(pdb_file, out_dir, unique_id):
     cat_cols = ['rss','rp2ss','rp4ss','rm2ss','rm4ss','charge','group_code']
     df1 = df1[num_cols + cat_cols]
 
-    model_a = load_model(f"{CBTREE_MODEL_DIR}/acidic")
-    model_b = load_model(f"{CBTREE_MODEL_DIR}/basic")
+    model_a = load_model(f"{CBTREE_MODEL_DIR}/acidic",verbose=False)
+    model_b = load_model(f"{CBTREE_MODEL_DIR}/basic",verbose=False)
 
     pred_a = model_a.predict(df1)
     pred_b = model_b.predict(df1)
@@ -792,11 +887,10 @@ def run_cb_tree_channel(pdb_file, out_dir, unique_id):
 def split_pdb_by_chain(pdb_file, out_dir):
     chains = {}
     with open(pdb_file, "r") as f:
-        lines = f.readlines()
-    for line in lines:
-        if line.startswith("ATOM"):
-            chain = line[21].strip()
-            chains.setdefault(chain, []).append(line)
+        for line in f:
+            if line.startswith("ATOM"):
+                chain = line[21].strip()
+                chains.setdefault(chain, []).append(line)
     chain_files = {}
     for chain, chain_lines in chains.items():
         chain_file = os.path.join(out_dir, f"temp_chain_{chain}.pdb")
@@ -838,30 +932,61 @@ def get_acidic_embedding(sequence, header, default_acidic):
 def run_acidic_inference(emb, residue_info, channel_name, nproc):
     if channel_name == "acidic_esm2":
         from __main__ import run_ensemble_inference, PRELOADED_ACIDIC_WEIGHTS_ESM2
-        return run_ensemble_inference(emb, residue_info, channel_name, nproc, PRELOADED_ACIDIC_WEIGHTS_ESM2)
+        return run_ensemble_inference(
+            emb,
+            residue_info,
+            channel_name,
+            nproc,
+            PRELOADED_ACIDIC_WEIGHTS_ESM2,
+        )
     else:
-        from __main__ import run_ensemble_inerence, PRELOADED_ACIDIC_WEIGHTS_ESMC
-        return run_ensemble_inference(emb, residue_info, channel_name, nproc, PRELOADED_ACIDIC_WEIGHTS_ESMC)
+        from __main__ import run_ensemble_inference, PRELOADED_ACIDIC_WEIGHTS_ESMC
+        return run_ensemble_inference(
+            emb,
+            residue_info,
+            channel_name,
+            nproc,
+            PRELOADED_ACIDIC_WEIGHTS_ESMC,
+        )
 
 
 ########################################
 # Single Pipeline for one sequence
 ########################################
-def process_single_pipeline(sequence, header, provided_structure_file,
-                            out_dir, args, unique_id):
+def process_single_pipeline(
+    sequence,
+    header,
+    provided_structure_file,
+    out_dir,
+    args,
+    unique_id,
+):
     import logging
     from __main__ import (
-        split_pdb_by_chain, parse_pdb_to_sequence, combine_pdb_files,
-        get_acidic_embedding, run_acidic_inference, run_ensemble_inference,
-        get_titratable_indices, update_pdb_beta_factors, write_predictions_csv,
-        run_cb_tree_channel, fold_structure, forge_fold_structure, optimize_side_chains
+        split_pdb_by_chain,
+        parse_pdb_to_sequence,
+        combine_pdb_files,
+        get_acidic_embedding,
+        run_acidic_inference,
+        run_ensemble_inference,
+        get_titratable_indices,
+        update_pdb_beta_factors,
+        write_predictions_csv,
+        run_cb_tree_channel,
+        fold_structure,
+        forge_fold_structure,
+        optimize_side_chains,
     )
 
-    if (provided_structure_file and
-        provided_structure_file.lower().endswith(".pdb")):
+    if (
+        provided_structure_file
+        and provided_structure_file.lower().endswith(".pdb")
+    ):
         chain_files = split_pdb_by_chain(provided_structure_file, out_dir)
         if len(chain_files) > 1:
-            logging.warning("Multiple chains found; model is single-chain but proceeding.")
+            logging.warning(
+                "Multiple chains found; model is single-chain but proceeding."
+            )
         combined_preds = {}
         updated_chain_files = []
 
@@ -869,31 +994,58 @@ def process_single_pipeline(sequence, header, provided_structure_file,
             seq_chain, residue_info = parse_pdb_to_sequence(chain_file)
             chain_header = header + f"_{chain}"
 
-            emb_acidic, acidic_channel = get_acidic_embedding(seq_chain, chain_header, args.acidic)
+            emb_acidic, acidic_channel = get_acidic_embedding(
+                seq_chain, chain_header, args.acidic
+            )
             if args.basic == "esm2":
                 from __main__ import extract_esm2_representation
-                out_b = extract_esm2_representation(seq_chain, chain_header)
+                out_b = extract_esm2_representation(
+                    seq_chain, chain_header
+                )
                 emb_basic = out_b["representations"][ESM2_REPR[0]]
             else:
                 from __main__ import extract_esmc_representation
-                out_b = extract_esmc_representation(seq_chain, chain_header)
+                out_b = extract_esmc_representation(
+                    seq_chain, chain_header
+                )
                 emb_basic = out_b["representations"][ESMC_REPR[0]]
 
-            def get_titratable_info(ri, chan):
-                idx = get_titratable_indices(ri, chan)
-                return idx, [ri[i] for i in idx]
-
-            a_idx, a_info = get_titratable_info(residue_info, "acidic")
-            b_idx, b_info = get_titratable_info(residue_info, "basic")
+            a_idx, a_info = (
+                get_titratable_indices(residue_info, "acidic"),
+                [
+                    residue_info[i]
+                    for i in get_titratable_indices(
+                        residue_info, "acidic"
+                    )
+                ],
+            )
+            b_idx, b_info = (
+                get_titratable_indices(residue_info, "basic"),
+                [
+                    residue_info[i]
+                    for i in get_titratable_indices(
+                        residue_info, "basic"
+                    )
+                ],
+            )
             emb_a = emb_acidic[a_idx]
             emb_b = emb_basic[b_idx]
 
             logging.info("Running ensemble: acidic (chain %s)...", chain)
-            preds_acidic = run_acidic_inference(emb_a, a_info, acidic_channel, args.nproc)
+            preds_acidic = run_acidic_inference(
+                emb_a, a_info, acidic_channel, args.nproc
+            )
 
             logging.info("Running ensemble: basic (chain %s)...", chain)
             from __main__ import PRELOADED_BASIC_WEIGHTS
-            preds_basic = run_ensemble_inference(emb_b, b_info, "basic", args.nproc, PRELOADED_BASIC_WEIGHTS)
+
+            preds_basic = run_ensemble_inference(
+                emb_b,
+                b_info,
+                "basic",
+                args.nproc,
+                PRELOADED_BASIC_WEIGHTS,
+            )
 
             final_preds = {}
             for res in residue_info:
@@ -907,7 +1059,9 @@ def process_single_pipeline(sequence, header, provided_structure_file,
                     final_preds[uid] = (0.0, 0.0, 0.0)
 
             if not args.nocbtree:
-                cbtree = run_cb_tree_channel(chain_file, out_dir, unique_id + f"_{chain}")
+                cbtree = run_cb_tree_channel(
+                    chain_file, out_dir, unique_id + f"_{chain}"
+                )
                 for uid, val in final_preds.items():
                     cbtree_val = cbtree.get(uid, 0.0)
                     final_preds[uid] = (val[0], val[1], val[2], cbtree_val)
@@ -915,7 +1069,7 @@ def process_single_pipeline(sequence, header, provided_structure_file,
             combined_preds.update(final_preds)
             updated_file = chain_file + ".upd.pdb"
             update_pdb_beta_factors(chain_file, final_preds, updated_file)
-            updaed_chain_files.append(updated_file)
+            updated_chain_files.append(updated_file)
 
         csv_out = os.path.join(out_dir, "predictions.csv")
         write_predictions_csv(combined_preds, csv_out)
@@ -930,45 +1084,64 @@ def process_single_pipeline(sequence, header, provided_structure_file,
         if args.localfold:
             folded = fold_structure(sequence, out_dir)
         else:
-            folded = forge_fold_structure(sequence, header, out_dir)
+            folded = forge_fold_structure(
+                sequence, header, out_dir
+            )
         if not args.nopdb:
-            provided_structure_file = folded
-            if args.localfold:
-                provided_structure_file = optimize_side_chains(folded, out_dir)
+            provided_structure_file = (
+                optimize_side_chains(folded, out_dir)
+                if args.localfold
+                else folded
+            )
 
-        seq_from_pdb, residue_info = parse_pdb_to_sequence(provided_structure_file)
+        seq_from_pdb, residue_info = parse_pdb_to_sequence(
+            provided_structure_file
+        )
         if len(seq_from_pdb) != len(sequence):
             logging.warning("Folded structure mismatch vs input length!")
     if residue_info is None:
-        # fallback to no structure scenario
-        residue_info = [(aa, str(i + 1), "X", i + 1) for i, aa in enumerate(sequence)]
+        residue_info = [
+            (aa, str(i + 1), "X", i + 1)
+            for i, aa in enumerate(sequence)
+        ]
 
-    emb_acidic, acidic_channel_name = get_acidic_embedding(sequence, header, args.acidic)
+    emb_acidic, acidic_channel_name = get_acidic_embedding(
+        sequence, header, args.acidic
+    )
 
     if args.basic == "esm2":
         from __main__ import extract_esm2_representation
+
         out_b = extract_esm2_representation(sequence, header)
         emb_basic = out_b["representations"][ESM2_REPR[0]]
     else:
         from __main__ import extract_esmc_representation
+
         out_b = extract_esmc_representation(sequence, header)
         emb_basic = out_b["representations"][ESMC_REPR[0]]
 
-    def get_titratable_info(ri, chan):
-        idx = get_titratable_indices(ri, chan)
-        return idx, [ri[i] for i in idx]
-
-    a_idx, a_info = get_titratable_info(residue_info, "acidic")
-    b_idx, b_info = get_titratable_info(residue_info, "basic")
+    a_idx, a_info = (
+        get_titratable_indices(residue_info, "acidic"),
+        [residue_info[i] for i in get_titratable_indices(residue_info, "acidic")],
+    )
+    b_idx, b_info = (
+        get_titratable_indices(residue_info, "basic"),
+        [residue_info[i] for i in get_titratable_indices(residue_info, "basic")],
+    )
     emb_a = emb_acidic[a_idx]
     emb_b = emb_basic[b_idx]
 
     logging.info("Running ensemble: acidic ...")
-    preds_acidic = run_acidic_inference(emb_a, a_info, acidic_channel_name, args.nproc)
+    preds_acidic = run_acidic_inference(
+        emb_a, a_info, acidic_channel_name, args.nproc
+    )
 
     logging.info("Running ensemble: basic ...")
     from __main__ import PRELOADED_BASIC_WEIGHTS
-    preds_basic = run_ensemble_inference(emb_b, b_info, "basic", args.nproc, PRELOADED_BASIC_WEIGHTS)
+
+    preds_basic = run_ensemble_inference(
+        emb_b, b_info, "basic", args.nproc, PRELOADED_BASIC_WEIGHTS
+    )
 
     final_preds = {}
     for res in residue_info:
@@ -982,7 +1155,9 @@ def process_single_pipeline(sequence, header, provided_structure_file,
             final_preds[uid] = (0.0, 0.0, 0.0)
 
     if not args.nocbtree and provided_structure_file:
-        cbtree = run_cb_tree_channel(provided_structure_file, out_dir, unique_id)
+        cbtree = run_cb_tree_channel(
+            provided_structure_file, out_dir, unique_id
+        )
         for uid, val in final_preds.items():
             cbtree_val = cbtree.get(uid, 0.0)
             final_preds[uid] = (val[0], val[1], val[2], cbtree_val)
@@ -1003,51 +1178,42 @@ def process_single_pipeline(sequence, header, provided_structure_file,
 def process_one_sequence_in_parallel(record, args):
     """
     Runs in each child process (if --nproc>1).
-    'record' is (header, sequence).
-
-    This version COMPLETELY SILENCES child logs by redirecting stdout/stderr
-    to /dev/null.  The user sees only the main process's progress bar.
+    'record' is (header, sequence). Child logs silenced.
     """
     import sys
     import os
 
-    (header, sequence) = record
+    header, sequence = record
     unique_id = header.split()[0].lstrip(">")
 
-    # Redirect child stdout/stderr to /dev/null:
-    devnull = open(os.devnull, 'w')
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    sys.stdout = devnull
-    sys.stderr = devnull
+    devnull = open(os.devnull, "w")
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = devnull, devnull
 
     try:
         out_subdir = os.path.join(args.outdir, unique_id)
         os.makedirs(out_subdir, exist_ok=True)
 
         from __main__ import process_single_pipeline
+
         process_single_pipeline(
             sequence=sequence,
             header=header,
             provided_structure_file=None,
             out_dir=out_subdir,
             args=args,
-            unique_id=unique_id
+            unique_id=unique_id,
         )
     finally:
-        # Restore original stdout/stderr
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
+        sys.stdout, sys.stderr = old_stdout, old_stderr
         devnull.close()
 
-    # Return None so main process can do pbar.update(1).
     return None
 
 
 def process_fasta(fasta_file, args):
     """
     Reads multi-FASTA records and spawns separate processes if --nproc>1.
-    All child logs are SILENCED.  The main process has a pinned progress bar.
     """
     records = []
     with open(fasta_file, "r") as f:
@@ -1072,30 +1238,39 @@ def process_fasta(fasta_file, args):
 
     from tqdm import tqdm
 
-    # If only 1 process, do it serially. We still have a bar for user feedback.
     if args.nproc < 2:
-        with tqdm(total=total, desc="FASTA Seqs", ascii=True, ncols=80,
-                  position=0, dynamic_ncols=False, leave=True) as pbar:
+        with tqdm(
+            total=total,
+            desc="FASTA Seqs",
+            ascii=True,
+            ncols=80,
+            position=0,
+            dynamic_ncols=False,
+            leave=True,
+        ) as pbar:
             for rec in records:
-                process_one_sequence_in_parallel(rec, args)  # child's logs are also silenced
+                process_one_sequence_in_parallel(rec, args)
                 pbar.update(1)
         return
 
-    # Otherwise, parallel multi-process
     logging.info("Processing multi-fasta with nproc=%d", args.nproc)
-    from concurrent.futures import ProcessPoolExecutor, as_completed
     with ProcessPoolExecutor(max_workers=args.nproc) as executor:
-        futs = []
-        for rec in records:
-            fut = executor.submit(process_one_sequence_in_parallel, rec, args)
-            futs.append(fut)
+        futs = [
+            executor.submit(process_one_sequence_in_parallel, rec, args)
+            for rec in records
+        ]
 
-        with tqdm(total=total, desc="FASTA Seqs", ascii=True, ncols=80,
-                  position=0, dynamic_ncols=False, leave=True) as pbar:
+        with tqdm(
+            total=total,
+            desc="FASTA Seqs",
+            ascii=True,
+            ncols=80,
+            position=0,
+            dynamic_ncols=False,
+            leave=True,
+        ) as pbar:
             for _ in as_completed(futs):
-                # Each future is one sequence done, so update the bar
                 pbar.update(1)
-
 
 
 ########################################
@@ -1103,31 +1278,46 @@ def process_fasta(fasta_file, args):
 ########################################
 def main():
     args = parse_args()
+    global SKIP_SAFETY
+    SKIP_SAFETY = args.skip_safety
+
     splash()
     os.makedirs(args.outdir, exist_ok=True)
     log_file = os.path.join(args.outdir, "pipeline.log")
     setup_logging(log_file, debug=args.debug)
     logging.info("Starting KaML-ESM pipeline...")
 
-    global ACIDIC_MODEL_DIR, BASIC_MODEL_DIR
+    token = os.getenv("ESM_FORGE_TOKEN")
+    if token is None or len(token) == 0:
+        logging.error("ESM_FORGE_TOKEN not set.")
+        print("Alas, you must set the environmental variable ESM_FORGE_TOKEN before running.")
+        print("      e.g. export ESM_FORGE_TOKEN=<your_esm_forge_token>\n")
+        sys.exit(1)
+
+    global ACIDIC_MODEL_DIR, BASIC_MODEL_DIR, CBTREE_MODEL_DIR
     global ACIDIC_MODEL_DIR_ESM2, ACIDIC_MODEL_DIR_ESMC
     global PRELOADED_ACIDIC_WEIGHTS, PRELOADED_BASIC_WEIGHTS
     global PRELOADED_ACIDIC_WEIGHTS_ESM2, PRELOADED_ACIDIC_WEIGHTS_ESMC
     global GLOBAL_MLP_CLASSES
 
-    # override default with user inputs
-    ACIDIC_MODEL_DIR = f"wts/{args.acidic}/acidic"
-    BASIC_MODEL_DIR  = f"wts/{args.basic}/basic"
+    # make all wts paths relative to the script location, not cwd
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir   = os.path.abspath(os.path.join(script_dir, os.pardir))
+    # override default with user inputs (now relative to repo root)
+    ACIDIC_MODEL_DIR      = os.path.join(root_dir, "wts", args.acidic, "acidic")
+    BASIC_MODEL_DIR       = os.path.join(root_dir, "wts", args.basic,  "basic")
+    ACIDIC_MODEL_DIR_ESM2 = os.path.join(root_dir, "wts", "esm2",   "acidic")
+    ACIDIC_MODEL_DIR_ESMC = os.path.join(root_dir, "wts", "esmC",   "acidic")
+    CBTREE_MODEL_DIR      = os.path.join(root_dir, "wts", "CBtree")
 
-    # MLP classes
-    GLOBAL_MLP_CLASSES["acidic"]       = AcidicMLP if args.acidic == "esm2" else BasicMLP
-    GLOBAL_MLP_CLASSES["basic"]        = AcidicMLP if args.basic  == "esm2" else BasicMLP
-    GLOBAL_MLP_CLASSES["acidic_esm2"]  = AcidicMLP
-    GLOBAL_MLP_CLASSES["acidic_esmC"]  = BasicMLP
+    GLOBAL_MLP_CLASSES["acidic"]      = AcidicMLP if args.acidic == "esm2" else BasicMLP
+    GLOBAL_MLP_CLASSES["basic"]       = AcidicMLP if args.basic  == "esm2" else BasicMLP
+    GLOBAL_MLP_CLASSES["acidic_esm2"] = AcidicMLP
+    GLOBAL_MLP_CLASSES["acidic_esmC"] = BasicMLP
 
-    # load weights
     from __main__ import preload_weights
-    logging.info("Preloading user-specified acidic weights from %s", ACIDIC_MODEL_DIR)
+
+    logging.info("Preloading acidic weights from %s", ACIDIC_MODEL_DIR)
     PRELOADED_ACIDIC_WEIGHTS = preload_weights(ACIDIC_MODEL_DIR, "acidic")
 
     logging.info("Preloading basic weights from %s", BASIC_MODEL_DIR)
@@ -1139,43 +1329,48 @@ def main():
     logging.info("Preloading acidic ESMC weights for long sequences ...")
     PRELOADED_ACIDIC_WEIGHTS_ESMC = preload_weights(ACIDIC_MODEL_DIR_ESMC, "acidic_esmC")
 
-    # If user gave --fasta
     if args.fasta:
         process_fasta(args.fasta, args)
         logging.info("All multi-FASTA sequences processed. Done.")
         return
 
     # Single input mode
-    sequence        = None
-    structure_file  = None
-    residue_info    = None
-    header          = None
+    sequence = None
+    structure_file = None
+    header = None
 
     if args.seq:
         sequence = args.seq
-        header   = ">user-provided-sequence"
+        header = ">user-provided-sequence"
     elif args.uniprot:
         sequence = fetch_uniprot_sequence(args.uniprot)
-        header   = f">{args.uniprot}"
+        header = f">{args.uniprot}"
     elif args.pdb or args.pdbid:
         if args.pdb:
             structure_file = args.pdb
         else:
             structure_file = os.path.join(args.outdir, f"{args.pdbid}.pdb")
             structure_file = fetch_pdb(args.pdbid, structure_file)
-        seq_tmp, residue_info = parse_pdb_to_sequence(structure_file)
+        seq_tmp, _ = parse_pdb_to_sequence(structure_file)
         sequence = seq_tmp
-        header   = f">{structure_file}"
+        header = f">{structure_file}"
     else:
         logging.error("No valid input provided.")
         sys.exit(1)
 
     from __main__ import process_single_pipeline
+
     unique_id = header.split()[0].lstrip(">").replace(":", "_")
-    process_single_pipeline(sequence, header, structure_file, args.outdir, args, unique_id)
+    process_single_pipeline(
+        sequence, header, structure_file, args.outdir, args, unique_id
+    )
     logging.info("Pipeline completed for single input.")
     print("")
+    return args
+
 
 if __name__ == "__main__":
-    main()
+    args = main()
+    print("--------------------------------------------------------------------------------")
+    print(f"KaML run complete. Outputs written to ./{args.outdir}/\n")
 

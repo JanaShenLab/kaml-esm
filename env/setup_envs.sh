@@ -45,7 +45,7 @@ modify_venv_activation() {
     {
         echo -e "\n# Added by setup_envs.sh"
         echo "export PATH=\"$SCRIPTS_DIR:\$PATH\""
-        echo "export PLMPG_FORGE_TOKEN=\"$SETUP_DIR/forge_token.txt\""
+        #echo "export PLMPG_FORGE_TOKEN=\"$SETUP_DIR/forge_token.txt\""
     } >> "$activate_script"
 
     # Add alias masking based on env_name
