@@ -65,31 +65,31 @@ Keep this token private.
 
 Single sequence:
 
-    KaML-ESM --seq "MEEPQSDPSV..." --outdir results/seq1
+    kaml-esm --seq "MEEPQSDPSV..." --outdir results/seq1
 
 Fetch by UniProt:
 
-    KaML-ESM --uniprot P04637 --outdir results/p53
+    kaml-esm --uniprot P04637 --outdir results/p53
 
 Fetch PDB:
 
-    KaML-ESM --pdbid 1CRN --outdir results/1crn
+    kaml-esm --pdbid 1CRN --outdir results/1crn
 
 Multi‑FASTA:
 
-    KaML-ESM --fasta proteins.fasta --nproc 4 --outdir results/all
+    kaml-esm --fasta proteins.fasta --nproc 4 --outdir results/all
 
 Skip safety filter (requires permission):
 
-    KaML-ESM --seq "MEEPQSDPSV..." --skip_safety
+    kaml-esm --seq "MEEPQSDPSV..." --skip_safety
 
 Skip structure folding:
 
-    KaML-ESM --seq "MEEPQSDPSV..." --nofold
+    kaml-esm --seq "MEEPQSDPSV..." --nofold
 
 Disable CBTREE:
 
-    KaML-ESM --seq "MEEPQSDPSV..." --nocbtree
+    kaml-esm --seq "MEEPQSDPSV..." --nocbtree
 
 ## Outputs
 
@@ -102,7 +102,10 @@ Default `--outdir` is `output/`, containing:
 
 ## Code Layout
 
-    bin/KaML-ESM            # main CLI script
+    bin/kaml-esm            # main CLI script
+    bin/kaml-cbtree         # KaML-CBtree helper script
+    bin/rida                # rida binary (req. by CBtree)
+    bin/mkdssp              # dssp binary (req. by CBtree)
     env/setup_envs.sh       # env setup for python virtual enviroment (venv)
     src/plmpg/esm2          # vendored ESM2 code
     wts/                    # pretrained weights
