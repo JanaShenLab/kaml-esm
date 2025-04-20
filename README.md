@@ -1,96 +1,120 @@
 # KaML-ESM Inference Pipeline
 
-An end-to-end pKa prediction pipeline using state-of-the-art ESM embeddings and multi-layer perceptron (MLP) inference. This tool accepts multiple input types and offers configurable model choices for acidic and basic channels.
+An end-to-end pKa prediction pipeline using state-of-the-art ESM embeddings
+and ensemble MLP inference. Supports single‑sequence, PDB, UniProt and
+multi‑FASTA inputs, with configurable channels.
 
 ## Overview
 
-The KaML-ESM Inference Pipeline performs the following tasks:
-- **Embedding Extraction:**  
-  Extracts protein embeddings using either ESM2 or ESMC models. 
-- **Inference:**  
-  Uses ensemble MLP models (AcidicMLP and BasicMLP) for pKa prediction with parallel processing.
-- **Structure Processing:**  
-  Optionally folds and optimizes protein structures.
-- **Model Selection:**  
-  Use the optional arguments `--acidic` and `--basic` to select the model for each channel. By default, acidic uses esm2 and basic uses esmC.
+KaML‑ESM runs:
+- Embedding extraction (ESM2 or ESMC)
+- Ensemble inference (AcidicMLP & BasicMLP)
+- Optional structure folding & optimization
+- Optional CBTREE refinement
+- Results export (CSV, updated PDB, logs)
+
+## Features
+
+- **Inputs**:  
+    • `--seq` (raw sequence)  
+    • `--pdb` (local PDB file)  
+    • `--pdbid` (fetch PDB by ID)  
+    • `--uniprot` (fetch UniProt sequence)  
+    • `--fasta` (multi‑FASTA batch)
+
+- **Channels**:  
+    • Acidic: `--acidic` (`esm2` or `esmC`)  
+    • Basic:  `--basic`  (`esm2` or `esmC`)
+
+- **Structure**:  
+    • Default: Forge folding via `ESM_FORGE_TOKEN`  
+    • Local: `--localfold` to use ESM3‑open + SCWRL4  
+
+- **Safety**:  
+    • `--skip_safety` to bypass ESM safety filter (permission required)  
+
+- **CBTREE**:  
+    • Disabled with `--nocbtree`  
+
+## Requirements
+
+- Python 3.10+
+- Internet (for Forge API, UniProt, PDB fetch)
+- Python packages described in: env/KaML-ESM_env.txt
 
 ## Environment Setup
 
-The repository includes an environment setup script located in the `env` directory. This script supports both Conda and Python virtual environments.
-
-To set up a **Conda** environment, run:
-
-    cd env
-    ./setup_envs.sh conda
-
-Or, to set up a **venv** environment, run:
+Use the script in `env/` for venv:
 
     cd env
     ./setup_envs.sh venv
 
-These scripts do the following:
-- Create the environment (e.g., "KaML-ESM") with Python 3.10.12.
-- Install all dependencies listed in the respective `*_env.txt` files.
-- Modify the activation script to add the repository's `/bin` directory to your PATH so that you can call KaML-ESM from anywhere as long as the environment is active.
-- Set up environment variables and alias masking for the different models.
+This creates a Python 3.10.12 environment, installs dependencies, and
+adds `bin/` to your `PATH`.
 
-Make sure you have a file named `forge_token.txt` (containing your ESM Forge token) in the repository root, or adjust the path as needed.
+## ESM Forge Token
 
-## ESM Token Setup
+KaML‑ESM requires `ESM_FORGE_TOKEN` for Forge and ESMC:
 
-Both esmC and esm3 models require a valid token from the ESM platform to operate. You must obtain a token through ESM and assign it to an environment variable. For example, if your token is saved in a file at `~/wrk/tmp/plm_playground/env/forge_token.txt`, run:
+    export ESM_FORGE_TOKEN=$(cat path/to/forge_token.txt)
 
-    export PLMPG_FORGE_TOKEN=$(cat ~/wrk/tmp/plm_playground/env/forge_token.txt)
+Keep this token private.
 
-Ensure that this environment variable is set in your shell session before running the pipeline. Keep your token secure and do not share it publicly.
+## Usage Examples
 
-## Usage
+Single sequence:
 
-After activating the appropriate environment (via Conda or venv), run the pipeline script as follows:
+    KaML-ESM --seq "MEEPQSDPSV..." --outdir results/seq1
 
-    p53=MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGPDEAPRMPEAAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYQGSYGFRLGFLHSGTAKSVTCTYSPALNKMFCQLAKTCPVQLWVDSTPPPGTRVRAMAIYKQSQHMTEVVRRCPHHERCSDSDGLAPPQHLIRVEGNLRVEYLDDRNTFRHSVVVPYEPPEVGSDCTTIHYNYMCNSSCMGGMNRRPILTIITLEDSSGNLLGRNSFEVRVCACPGRDRRTEEENLRKKGEPHHELPPGSTKRALPNNTSSSPQPKKKPLDGEYFTLQIRGRERFEMFRELNEALELKDAQAGKEPGGSRAHSSHLKSKKGQSTSRHKKLMFKTEGPDSD
-    KaML-ESM --seq ${p53}
+Fetch by UniProt:
 
-Other input options include:
-- `--pdb` for specifying a PDB file,
-- `--pdbid` for fetching a PDB structure by ID, or
-- `--uniprot` for fetching a sequence from UniProt.
+    KaML-ESM --uniprot P04637 --outdir results/p53
 
-To change the default model selection for each channel, use the `--acidic` and `--basic` options:
+Fetch PDB:
 
-    KaML-ESM --seq "YOUR_SEQUENCE" --acidic esm2 --basic esmC
+    KaML-ESM --pdbid 1CRN --outdir results/1crn
 
-By default, acidic uses esm2 (with the AcidicMLP architecture) and basic uses esmC (with the BasicMLP architecture). If both channels use the same model, embeddings are extracted only once.
+Multi‑FASTA:
 
-The pipeline outputs:
-- A CSV file (`predictions.csv`) with predicted pKa values.
-- An updated PDB file (if structure output is enabled).
-- A detailed log file (`pipeline.log`) in the specified output directory.
+    KaML-ESM --fasta proteins.fasta --nproc 4 --outdir results/all
 
-## Code Structure
+Skip safety filter (requires permission):
 
-- **bin/KaML-ESM**  
-  Main executable for embedding extraction, inference, and structure updates.
-  
-- **env/setup_envs.sh**  
-  Shell script to set up Conda or venv environments and install dependencies.
+    KaML-ESM --seq "MEEPQSDPSV..." --skip_safety
 
-- **src/plmpg/esm2**  
-Vendored ESM2 (i.e. fair-esm) with a wrapper to enable side-by-side esm2 and esm3/C.
+Use local folding:
 
-- **wts**  
- saved model weights for ESM2 and ESMC acidic and basic channels
+    KaML-ESM --seq "MEEPQSDPSV..." --localfold
 
-- **README.md**  
-  This documentation file.
+Disable CBTREE:
+
+    KaML-ESM --seq "MEEPQSDPSV..." --nocbtree
+
+## Outputs
+
+Default `--outdir` is `output/`, containing:
+
+- `predictions.csv`  — per‑residue pKa, shift, error, optional CBTREE  
+- `predicted_structure.pdb`  — updated B‑factors in PDB  
+- `pipeline.log`  — debug/info log  
+- subfolders for multi‑FASTA runs  
+
+## Code Layout
+
+    bin/KaML-ESM            # main CLI script
+    env/setup_envs.sh       # env setup for python virtual enviroment (venv)
+    src/plmpg/esm2          # vendored ESM2 code
+    wts/                    # pretrained weights
+    README.md               # this file
 
 ## Citation
 
-If you use the KaML-ESM Inference Pipeline in your research, please cite:
+If you use KaML‑ESM, please cite:
 
-Protein Electrostatic Properties are Fine-Tuned Through Evolution, Shen, M. Dayhoff II G.W, Shen, J. 2025, (In-Review)
+> Protein Electrostatic Properties are Fine‑Tuned Through Evolution  
+> Shen M., Dayhoff II G.W., Shen J. 2025 (In‑Review)
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License
 
