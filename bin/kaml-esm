@@ -292,11 +292,11 @@ def retry_operation(func, max_retries=3, initial_delay=2,
               print("   3. try again\n")
               sys.exit(1)
             # verbose sequence concern check
-            if "permission" in str(result):
+            if "User does not have permission to skip safety filter" in str(result):
               print("\n\n" + "-"*80)
               print("\nAlas, the forge API says you do not have permission to skip the safety filter.")
               print("   a. get permission to skip the safety filter from ESM directly")
-              print("   b. do not use the --skip_safety flag")
+              print("   b. do not use the --skip_safety flag\n")
               sys.exit(1)
 
             logging.debug("Attempt %d: Success.", attempt)
@@ -795,12 +795,12 @@ def forge_fold_structure(sequence, header, out_dir,
                   print("   2. once you have permission, use the --skip_safety flag at runtime")
                   print("   3. try again\n")
                   sys.exit(1)
-               #if "not have permission" in str(result):
-               #  print("\n\n" + "-"*80)
-               #  print("\nAlas, the forge API says you do not have permission to skip the safety filter.")
-               #  print("   a. get permission to skip the safety filter from ESM directly")
-               #  print("   b. do not use the --skip_safety flag")
-               #  sys.exit(1)
+                if "User does not have permission to skip safety filter" in str(struct):
+                  print("\n\n" + "-"*80)
+                  print("\nAlas, the forge API says you do not have permission to skip the safety filter.")
+                  print("   a. get permission to skip the safety filter from ESM directly")
+                  print("   b. do not use the --skip_safety flag\n")
+                  sys.exit(1)
                 pdb_file = os.path.join(out_dir, "folded_structure.pdb")
                 struct.to_pdb(pdb_file)
                 logging.info("Folded structure -> %s", pdb_file)
