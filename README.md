@@ -29,7 +29,7 @@ KaML‑ESM runs:
 - **Structure**:  
     • Default: Forge folding* via `ESM_FORGE_TOKEN`  
     • `--nofold` (do not fold a structure, will disable CBTree unless pdbid/pdb provided)  
-        \* in our tests folding takes approximately 20s on average
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;\* in our tests folding takes approximately 20s on average
 
 - **Safety**:  
     • `--skip_safety` to bypass ESM safety filter (permission required)  
