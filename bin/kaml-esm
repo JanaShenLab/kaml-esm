@@ -88,6 +88,8 @@ THREE_TO_ONE = {
     "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y",
 }
 
+ONE_TO_THREE = {v: k for k, v in THREE_TO_ONE.items()}
+
 # For toggling acidic channel if seq > 1022
 ACIDIC_MODEL_DIR      = "wts/esm2/acidic"
 BASIC_MODEL_DIR       = "wts/esmC/basic"
@@ -190,8 +192,8 @@ def parse_args():
     grp.add_argument("--pdbid",   type=str, help="PDB ID to fetch structure")
     grp.add_argument("--uniprot", type=str, help="UniProt ID to fetch seq")
     grp.add_argument("--fasta",   type=str, help="Path to multi-FASTA file")
-    p.add_argument("--nopdb",     action="store_true",
-                   help="Skip structure output step")
+    p.add_argument("--nofold",     action="store_true",
+                   help="Skip structure folding step")
     p.add_argument("--outdir",    type=str, default="output",
                    help="Output directory")
     p.add_argument("--nproc",     type=int, default=1,
@@ -200,8 +202,9 @@ def parse_args():
                    help="Enable debug logging")
     p.add_argument("--skip_safety", action="store_true",
                    help="Skip safety filter (ESM permission required)")
-    p.add_argument("--localfold", action="store_true",
-                   help="Use local folding (esm3-open + SCWRL4)")
+   #TODO: finishing this sometime, but esm3-open has a small len limit soo...eh
+   # p.add_argument("--localfold", action="store_true",
+   #                help="Use local folding (esm3-open + SCWRL4)")
     p.add_argument("--acidic", type=str, default="esm2",
                    choices=["esm2", "esmC"],
                    help="Acidic channel model (ignored if len>1022)")
@@ -315,6 +318,22 @@ def retry_operation(func, max_retries=3, initial_delay=2,
 
 
 def get_titratable_indices(residue_info, channel):
+    # Handle both one‑letter (no‑fold) and three‑letter (PDB) codes
+    idxs = []
+    for i, (res, rn, ch, si) in enumerate(residue_info):
+        # if res is already one‑letter, use it; else map three‑letter -> one‑letter
+        if len(res) == 1:
+            aa = res.upper()
+        else:
+            aa = THREE_TO_ONE.get(res.upper(), "X")
+        if channel == "acidic" and aa in residue_groups["acidic"]:
+            idxs.append(i)
+        elif channel == "basic" and aa in residue_groups["basic"]:
+            idxs.append(i)
+    logging.debug("Titratable %s indices: %s", channel, idxs)
+    return idxs
+
+def old_get_titratable_indices(residue_info, channel):
     idxs = []
     for i, (res, rn, ch, si) in enumerate(residue_info):
         aa = THREE_TO_ONE.get(res.upper(), "X")
@@ -530,8 +549,13 @@ def inference_worker(ensemble_ids, embeddings, filt_res_info,
                 split = key[0]
                 std, mean = norm_dict[split]
                 pred_back = raw_pred * std + mean
-                aa = THREE_TO_ONE.get(res_name.upper(), "X")
+
+                if len(res_name) == 1:
+                    aa = res_name.upper()
+                else:
+                    aa = THREE_TO_ONE.get(res_name.upper(), "X")
                 base_pka = model_pka_dict.get(aa, 0.0)
+
                 if abs(raw_pred) < 1e-9:
                     shift = 0.0
                     final = 0.0
@@ -610,6 +634,62 @@ def run_ensemble_inference(embeddings, filt_res_info, channel,
 # Utility: write_predictions, update_pdb
 ########################################
 def write_predictions_csv(predictions, out_csv):
+    import logging
+    include_cbtree = any(len(v) == 4 for v in predictions.values())
+    if include_cbtree:
+        headers = [
+            "Residue_ID",
+            "Pred_pKa",
+            "Pred_Shift",
+            "Pred_Err",
+            "Conf_pKa",
+        ]
+        widths = [10, 12, 12, 10, 10]
+    else:
+        headers = [
+            "Residue_ID",
+            "Pred_pKa",
+            "Pred_Shift",
+            "Error",
+        ]
+        widths = [10, 12, 12, 10]
+    header_line = "".join(f"{h:>{w}}" for h, w in zip(headers, widths))
+    with open(out_csv, "w") as f:
+        f.write(header_line + "\n")
+        for uid, vals in predictions.items():
+            # map one-letter code → three-letter residue name
+            parts = uid.split("_", 2)
+            three = ONE_TO_THREE.get(parts[0], parts[0])
+            uid3 = "_".join([three, parts[1], parts[2]])
+            if len(vals) == 4:
+                final, shift, err, cbtree = vals
+            elif len(vals) == 3:
+                final, shift, err = vals
+                cbtree = 0.0
+            elif len(vals) == 2:
+                final, shift = vals
+                err, cbtree = 0.0, 0.0
+            else:
+                final, shift, err, cbtree = 0.0, 0.0, 0.0, 0.0
+
+            if include_cbtree:
+                row = (
+                    f"{uid3:<{widths[0]}}"
+                    f"{final:>{widths[1]}.2f}"
+                    f"{shift:>{widths[2]}.2f}"
+                    f"{err:>{widths[3]}.2f}"
+                    f"{cbtree:>{widths[4]}.2f}"
+                )
+            else:
+                row = (
+                    f"{uid3:<{widths[0]}}"
+                    f"{final:>{widths[1]}.2f}"
+                    f"{shift:>{widths[2]}.2f}"
+                    f"{err:>{widths[3]}.2f}"
+                )
+            f.write(row + "\n")
+    logging.info("Wrote predictions to %s", out_csv)
+def old_write_predictions_csv(predictions, out_csv):
     import logging
     include_cbtree = any(len(v) == 4 for v in predictions.values())
     if include_cbtree:
@@ -1080,19 +1160,20 @@ def process_single_pipeline(
 
     # Single chain or no PDB
     residue_info = None
-    if not provided_structure_file and not args.nopdb:
-        if args.localfold:
-            folded = fold_structure(sequence, out_dir)
-        else:
-            folded = forge_fold_structure(
-                sequence, header, out_dir
-            )
-        if not args.nopdb:
-            provided_structure_file = (
-                optimize_side_chains(folded, out_dir)
-                if args.localfold
-                else folded
-            )
+    if not provided_structure_file and not args.nofold:
+       # if args.localfold:
+       #     folded = fold_structure(sequence, out_dir)
+       # else:
+        folded = forge_fold_structure(
+            sequence, header, out_dir
+        )
+        #if not args.nopdb:
+        provided_structure_file = (
+            #optimize_side_chains(folded, out_dir)
+            #if args.localfold
+            #else folded
+            folded
+        )
 
         seq_from_pdb, residue_info = parse_pdb_to_sequence(
             provided_structure_file
@@ -1165,7 +1246,7 @@ def process_single_pipeline(
     csv_out = os.path.join(out_dir, "predictions.csv")
     write_predictions_csv(final_preds, csv_out)
 
-    if not args.nopdb and provided_structure_file:
+    if provided_structure_file:
         pdb_out = os.path.join(out_dir, "predicted_structure.pdb")
         update_pdb_beta_factors(provided_structure_file, final_preds, pdb_out)
 
