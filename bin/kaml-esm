@@ -1370,8 +1370,9 @@ def main():
     setup_logging(log_file, debug=args.debug)
     logging.info("Starting KaML-ESM pipeline...")
 
-    token = os.getenv("ESM_FORGE_TOKEN")
-    if token is None or len(token) == 0:
+    if args.nofold is not True and args.basic != "esm2":
+      token = os.getenv("ESM_FORGE_TOKEN")
+      if token is None or len(token) == 0:
         logging.error("ESM_FORGE_TOKEN not set.")
         print("Alas, you must set the environmental variable ESM_FORGE_TOKEN before running.")
         print("      e.g. export ESM_FORGE_TOKEN=<your_esm_forge_token>\n")
