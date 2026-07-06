@@ -376,6 +376,7 @@ def parse_args():
         action="store_true",
         help="Skip CBTREE predictions"
     )
+
     p.add_argument(
         "--show-nontitratable",
         action="store_true",
