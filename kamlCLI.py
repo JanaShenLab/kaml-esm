@@ -376,6 +376,11 @@ def parse_args():
         action="store_true",
         help="Skip CBTREE predictions"
     )
+    p.add_argument(
+        "--show-nontitratable",
+        action="store_true",
+        help="Include non-titratable residues in prediction output with zero-valued predictions"
+    )
     return p.parse_args()
 
 
@@ -1325,7 +1330,7 @@ def process_single_pipeline(
                     final_preds[uid] = preds_a[uid]
                 elif uid in preds_b:
                     final_preds[uid] = preds_b[uid]
-                else:
+                elif args.show_nontitratable:
                     final_preds[uid] = (0.0, 0.0, 0.0)
 
             # optional CBTREE
@@ -1407,7 +1412,7 @@ def process_single_pipeline(
             final_preds[uid] = preds_a[uid]
         elif uid in preds_b:
             final_preds[uid] = preds_b[uid]
-        else:
+        elif args.show_nontitratable:
             final_preds[uid] = (0.0, 0.0, 0.0)
 
     if not args.nocbtree and provided_structure_file:
