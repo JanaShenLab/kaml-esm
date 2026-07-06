@@ -335,7 +335,7 @@ python kamlCLI.py \\
 
 ```bash
 python kamlCLI.py \\
---pdbid 1ABC \\
+--pdbid 1I0E \\
 --outdir output
 ```
 

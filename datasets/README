@@ -1,0 +1,13 @@
+50_holdouts.tar.gz: trn/val/tst datasets for 50 hold-out sets from random 10% splits of PKAD-3r
+
+EXP67S.tar.gz: trn/val/tst datasets for EXP67S (the pka test set proposed by Huang et al. and used by others)
+
+OBTRUDE.tar.gz: trn/val/tst datasets for OBTRUDE (abnormally shifted pka values of engineered mutations of staph nuclease from the Garcia-Moreno lab)
+
+time_stamped.tar.gz: A time-stamped external validation set (experimental pka values published after April 2023, the cutoff date for PKAD-3 data collection)
+
+CDHIT.zip: trn/val/tst datasets for 20 CDHIT-partitioned hold-out sets from random 10% splits of PKAD-3r (no OBTRUDES)
+
+pretrain.csv: pretraining dataset with sythetic pKa values calculated by KaML-CBT
+
+GAINES.csv: augmentation dataset
