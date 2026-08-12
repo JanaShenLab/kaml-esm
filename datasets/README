@@ -11,3 +11,5 @@ CDHIT.zip: trn/val/tst datasets for 20 CDHIT-partitioned hold-out sets from rand
 pretrain.csv: pretraining dataset with sythetic pKa values calculated by KaML-CBT
 
 GAINES.csv: augmentation dataset
+
+Source_Data.xlsx: contains detailed model performance across different benchmark datasets, OBTRUDE dataset, residues w/o GAINES augmentation, low pKa Cys Pfam analysis.
