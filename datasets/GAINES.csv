@@ -1,4 +1,4 @@
-PDB_ID,Chain,Res_Name,Res_ID,pKa,Uniprot_ID,Uni_resid
+PDB_ID,Chain,Res_Name,Res_ID,Expt_pKa,Uniprot_ID,Uni_resid
 2BWL,A,D,D,1.8,P21570,27.0
 3F8G,B,D,D,1.8,P07998,42.0
 1CDT,B,D,D,2.3,P01452,57.0
