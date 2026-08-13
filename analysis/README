@@ -13,3 +13,5 @@ emb_extraction.ipynb: for extarcting per-residue embeddings
 train_model.py & model_class.py: for model training
 
 Source_Data.xlsx: detailed model performance metrics comparison
+
+human_proteome_pka.csv: contains KaMLESM2 predicted pKa for human proteome, source data for Fig 6.
