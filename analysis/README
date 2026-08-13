@@ -1,1 +1,13 @@
-XXX
+Fig2c_seq_similarity.csv: source data for Fig 2C
+
+Fig4.dat: source data for Fig 4
+
+GAINES.ipynb: scripts for running GAINES augmentation
+
+GAINES_ablation.dat: source data for Fig 3
+
+dataset_split.ipynb: stratifiedGroupKFold data spliting script
+
+emb_extraction.ipynb: for extarcting per-residue embeddings
+
+train_model.py & model_class.py: for model training
