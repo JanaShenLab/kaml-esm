@@ -11,3 +11,5 @@ dataset_split.ipynb: stratifiedGroupKFold data spliting script
 emb_extraction.ipynb: for extarcting per-residue embeddings
 
 train_model.py & model_class.py: for model training
+
+Source_Data.xlsx: detailed model performance metrics comparison
